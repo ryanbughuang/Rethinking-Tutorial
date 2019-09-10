@@ -1,0 +1,275 @@
+---
+title: "Tutorial CH9, CH10"
+author: "Ryan Huang"
+date: "8/22/2019"
+output: html_document
+---
+
+```{r, results='hide'}
+library(rethinking)
+library(rstan)
+library(tidyverse)
+compare = rethinking::compare
+```
+
+# CH9: BIG ENTROPY AND THE GENERALIZED LINEAR MODEL
+GLMs need not use Gaussian likelihoods. Any likelihood function can be used, and linear models can be attached to any or all of the parameters that describe its shape.
+
+The distribution that can happen the most ways is also the distribution with the biggest information entropy. The distribution with the biggest entropy is the most conservative distribution that obeys its constraints.
+
+Ｃonditional independence: the observations are independent after accounting for differences in predictors, through the model. What this assumption doesn’t cover is a situation in which an observed event directly causes the next observed event.
+
+## Different distribution
+$X \sim {\sf Binom}(n, \pi)$
+
+## Link function
+* logit function: from real numbers to [0, 1]
+
+$log \frac{p_{i}}{1-p_{i}}$
+
+* log function: from real numbers to positive numbers
+
+*After adding the link function, every predictor essentially interacts with itself, because the impact of a change in a predictor depends upon the value of the predictor before the change.*
+
+# CH10: Counting and Classification
+
+CH11 in Rethinking Ver2.
+
+I use the model in the Ver2. textbook since it's easier to understand.
+
+## Binomial Regression
+
+$y \sim {\sf Binom}(n, p)$
+
+* Logistic regression: outcome = 1 or 0
+* Aggregated binomial regression: outcome 
+
+### Data
+There are 12 chimpanzees and four different treatments:
+1. prosoc_left= 0 and condition= 0
+2. prosoc_left= 1 and condition= 0
+3. prosoc_left= 0 and condition= 1
+4. prosoc_left= 1 and condition= 1
+
+We would like to know how different chimpanzees will react under different treatments.
+```{r}
+data(chimpanzees)
+d_chimpanzees = chimpanzees
+d_chimpanzees$treatment <- 1 + d_chimpanzees$prosoc_left + 2*d_chimpanzees$condition
+
+?chimpanzees
+```
+### Model 1
+This is the base model. We only have one intercept term. The model is kind of estimating the average `p` of the binomial distribution.
+
+$L_i \sim Binomial(1,p_i)$
+$logit(p_i) = \alpha$
+$\alpha \sim normal(0,\omega)$
+
+#### Prior Comparison
+
+Since the GLM model is no longer liner, we can't set the prior using just our intuition.
+
+We should visuilize them to see if the priors are reasonable.
+```{r}
+n = 1000
+# omega = 10
+a1 = rnorm(n, 0, 10)
+
+# omega = 1.5
+a2 = rnorm(n, 0, 1.5)
+
+prior_comp = data.frame(
+  prior1 = inv_logit(a1),
+  prior2 = inv_logit(a2)
+)
+
+prior_comp %>% 
+  ggplot() +
+  geom_density(aes(prior1), color="black", adjust=.1) +
+  geom_density(aes(prior2), color="blue", adjust=.1) +
+  labs(x="Prior Prob.") +
+  annotate("text", x=0.5, y=4, label= "a ~ normal(0, 10)", color="black") + 
+  annotate("text", x=0.5, y=3, label= "a ~ normal(0, 1.5)", color="blue")
+```
+From the above experiment, we can tell that a *flat* prior such as normal(0, 10) may not be as flat as we expected after the logit transformation. So we have to be careful about our choice of prior in glm models.
+
+#### GLM Model
+When using the GLM models, it's very common that we have to do parameters transformation such as logit transformation. To avoid declaring the transformed parameters too many times in different code blocks, we can add the transformed parameters block in Stan. By doing so, we can use it in both model block and generated quantities block without declaring it again.
+```{r, results='hide'}
+m10.1 = "
+data {
+	int N;
+	int pulled_left[N];
+}
+parameters {
+	real alpha;
+}
+transformed parameters {
+	real p = inv_logit(alpha);
+}
+model {
+
+	pulled_left ~ binomial(1, p);
+
+	// prior
+	alpha ~ normal(0, 1.5);
+}
+generated quantities {
+	vector[N] log_lik;
+	int pred_left[N];
+	
+	for (i in 1:N){
+		log_lik[i] = binomial_lpmf(pulled_left[i] | 1, p);
+		pred_left[i] = binomial_rng(1, p);
+	}
+}
+"
+dat10.1 = list(N = nrow(d_chimpanzees),
+               pulled_left = d_chimpanzees$pulled_left %>% as.integer)
+fit10.1 = stan(model_code = m10.1, data = dat10.1, cores = 2, chains = 2)
+```
+```{r}
+print(fit10.1, pars = c("alpha", "p"))
+```
+
+### Model 2
+In the second model, we add the **treatment effect** into the model using index coding.
+
+$L_i \sim Binomial(1,p_i)$
+$logit(p_i) = \alpha + \beta[treatment]$
+$\alpha \sim normal(0,\omega)$
+$\beta \sim normal(0,\omega)$
+
+#### Prior Comparison
+We should try different priors on beta as well. Since each beta will be compared with other betas, we care about the difference in final probability under different betas. A flat normal prior on beta implies that the difference is more likely to be either 0 or 1. Usually we would like a regularized prior on beta which concentrated on low absolute differences. So the narrow normal prior on beta is better.
+```{r}
+n = 10000
+
+data.frame(iter = 1:n) %>% 
+  mutate(b1 = inv_logit(rnorm(n, 0, 10)) - inv_logit(rnorm(n, 0, 10)),
+         b2 = inv_logit(rnorm(n, 0, .5)) - inv_logit(rnorm(n, 0, .5))) %>% 
+  ggplot() +
+  geom_density(aes(abs(b1)), adj=.1, color="black") +
+  geom_density(aes(abs(b2)), adj=.1, color="blue") +
+  labs(x="prior diff between treatments") +
+  annotate("text", x=0.5, y=2, label= "b ~ normal(0, 10)", color="black") + 
+  annotate("text", x=0.5, y=1.5, label= "b ~ normal(0, 0.5)", color="blue")
+```
+#### GLM Model
+```{r, results='hide'}
+m10.2 = "
+data {
+	int N;
+	int pulled_left[N];
+	int L;
+	int treatment[N];
+
+}
+parameters {
+	real alpha;
+	real beta[L];
+}
+transformed parameters {
+	real p[N];
+	for (i in 1:N){
+		p[i] = inv_logit(alpha + beta[treatment[i]]);
+	}
+}
+model {
+
+	pulled_left ~ binomial(1, p);
+
+	// prior
+	alpha ~ normal(0, 1.5);
+	beta ~ normal(0, .5);
+}
+generated quantities {
+	vector[N] log_lik;
+	int pred_left[N];
+	
+	for (i in 1:N){
+		log_lik[i] = binomial_lpmf(pulled_left[i] | 1, p[i]);
+		pred_left[i] = binomial_rng(1, p[i]);
+	}
+}
+"
+dat10.2 = list(N = nrow(d_chimpanzees),
+               pulled_left = d_chimpanzees$pulled_left %>% as.integer,
+               treatment = d_chimpanzees$treatment %>% as.integer,
+               L = d_chimpanzees$treatment %>% unique() %>% length())
+fit10.2 = stan(model_code = m10.2, data = dat10.2, cores = 2, chains = 2)
+```
+```{r}
+print(fit10.2, pars = c("alpha", "beta"))
+```
+
+### Model 3
+In the final model, we take the effect of different chimpanzees into consideration.
+
+We set `alpha` to be the length of number of different chimpanzees.
+
+$L_i \sim Binomial(1,p_i)$
+$logit(p_i) = \alpha[chimp] + \beta[treatment]$
+$\alpha[chimp] \sim normal(0,\omega)$
+$\beta[treatment] \sim normal(0,\omega)$
+#### GLM Model
+```{r, results='hide'}
+m10.3 = "
+data {
+	int N;
+	int pulled_left[N];
+	int L;
+	int treatment[N];
+	int A;
+	int actor[N];
+
+}
+parameters {
+	real alpha[A];
+	real beta[L];
+}
+transformed parameters {
+	real p[N];
+	for (i in 1:N){
+		p[i] = inv_logit(alpha[actor[i]] + beta[treatment[i]]);
+	}
+}
+model {
+
+	pulled_left ~ binomial(1, p);
+
+	// prior
+	alpha ~ normal(0, 1.5);
+	beta ~ normal(0, .5);
+}
+generated quantities {
+	vector[N] log_lik;
+	int pred_left[N];
+	
+	for (i in 1:N){
+		log_lik[i] = binomial_lpmf(pulled_left[i] | 1, p[i]);
+		pred_left[i] = binomial_rng(1, p[i]);
+	}
+}
+"
+dat10.3 = list(N = nrow(d_chimpanzees),
+               pulled_left = d_chimpanzees$pulled_left %>% as.integer,
+               treatment = d_chimpanzees$treatment %>% as.integer,
+               L = d_chimpanzees$treatment %>% unique() %>% length(),
+               actor = d_chimpanzees$actor,
+               A = d_chimpanzees$actor %>% unique() %>% length())
+fit10.3 = stan(model_code = m10.3, data = dat10.3, cores = 2, chains = 2)
+```
+```{r}
+print(fit10.3, pars = c("alpha", "beta"))
+```
+### 
+### Model Comparison
+```{r}
+compare(fit10.1, fit10.2, fit10.3)
+```
+
+## Poisson Regression
+
+

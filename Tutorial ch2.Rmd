@@ -1,0 +1,153 @@
+---
+title: "Tutorial1 Ch2"
+author: "Ryan Huang"
+date: "7/26/2019"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rethinking)
+library(rstan)
+```
+
+## Chapter 2
+In ch2, the author illustrate the following idea:
+
+`posterior = prior * likelihood`
+
+by using an example of throwing a globe representing the Earth.
+
+
+After nine tosses we get our `data`: W L W W W L W L W, (6W, 3L).
+
+1. Goal: Estimate the proportion of water on Earth, `p`
+
+2. How:
+  + Model: data generating processes in our mind
+  + Fit the model: different approach for estimating `p`
+  + Evaluation
+  
+  
+### Model
+
+We assumed that the counts of **water** W and **land** L are distributed `binomially`, with probability `p` of **water** on each toss.
+
+### Fit the model
+
+There are different methods for us to estimate what's the most probable value of `p`:
+- Method 1: Grid Approximation
+- Method 2: Stan / MCMC
+
+#### Grid Approximation:
+
+1. define the grid
+2. define the weight of every p (`prior`)
+3. calculate the likelihood using `dbinom` (dbinom: the likelihood of having 6W from 9 draws given p)
+4. posterior = prior * likelihood
+
+
+```{r}
+d = 
+  tibble(
+    p_grid = seq(from=0, to=1, length.out = 100),
+    prior  = 1
+  ) %>% 
+  mutate(
+    grid.likelihood = dbinom(6, size = 9, prob = p_grid)
+  ) %>% 
+  mutate(
+    grid.unstd_post = prior * grid.likelihood
+  ) %>% 
+  mutate(
+    grid.post = grid.unstd_post / sum(grid.unstd_post)
+  )
+
+d$grid.post %>% sum()
+
+
+d %>% 
+  ggplot() +
+  geom_line(aes(p_grid, grid.post))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### Stan / MCMC:
+There is another approach called MCMC. MCMC will draw lots of samples to form the posterior, that is, we can calculate the count of samples to know the posterior.
+
+
+1. **data**: 6W, 3L
+2. **parameters**: `p`
+3. **model**: W: binomial distribution; P: unifrom
+
+```{r, results='hide'}
+binom.model = "
+data {
+	int N; // number of sample
+	int W; // number of suc
+}
+parameters {
+	real<lower=0, upper=1> p;
+}
+model {
+	// prior
+	p ~ uniform(0, 1);
+
+	//likelihood
+	W ~ binomial(N, p);
+}
+"
+binom.data = list(N = 9, W = 6)
+binom.fit = stan(model_code = binom.model, 
+                 data = binom.data,
+                 chains = 2,
+                 iter = 5000)
+binom.fit
+```
+
+```{r}
+binom.post = as.data.frame(binom.fit)
+dens(binom.post$p)
+
+a = binom.post$p %>% 
+  hist(breaks = seq(from=0, to=1, length.out = 100), plot = F) %>% 
+  .$counts %>% 
+  c(.,0)
+
+d = d %>% 
+  mutate(
+    stan.post = a / sum(a)
+  )
+
+
+d %>% ggplot()+
+  geom_line(aes(p_grid, grid.post))+
+  geom_col(aes(p_grid, stan.post), alpha = 0.5)+
+  labs(x='p_grid', y='posterior')
+```
+
+
+
+
+
+
+
