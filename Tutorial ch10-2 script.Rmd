@@ -244,7 +244,7 @@ dat10.3.2 = list(
 fit10.3.2 = stan(model_code = m10.3.2, 
                  data = dat10.3.2, 
                  cores = 2, chains = 2, 
-                 warmup = 1500, iter = 3000)
+                 warmup = 2000, iter = 3000)
 ```
 ```{r}
 print(fit10.3.2, pars = c("alpha", "beta", "gamma"))
@@ -252,7 +252,7 @@ print(fit10.3.2, pars = c("alpha", "beta", "gamma"))
 
 ### Posterior Prediction
 #### Math Model
-The trend for societies with high contact is higher than that for societies with low contact when population size is low, but then the model allows the trend for high contact to be smaller when population size is high.
+The trend for societies with high contact is higher than that for societies with low contact when population size is low, but the model allows the trend for high contact to be smaller when population size is high.
 
 Also, the math model has no guarantee that the trend for λ will pass through the origin where total tools equals zero and the population size equals zero.
 ```{r}
@@ -266,7 +266,8 @@ p10.3.1 = result10.3.1 %>%
   ggplot(aes(fill=contact)) +
   geom_line(aes(pop, pred_tool, color=contact)) +
   geom_ribbon(aes(x = pop, ymin=PI_lower, ymax=PI_upper), alpha = .3) +
-  geom_point(data = d_Kline, aes(d_Kline$population, d_Kline$total_tools, fill=d_Kline$contact), shape=21)
+  geom_point(data = d_Kline, aes(d_Kline$population, d_Kline$total_tools, fill=d_Kline$contact), shape=21) +
+  ggtitle("Math Model")
 
 ```
 
@@ -282,7 +283,8 @@ p10.3.2 = result10.3.2 %>%
   ggplot(aes(fill=contact)) +
   geom_line(aes(pop, pred_tool, color=contact)) +
   geom_ribbon(aes(x = pop, ymin=PI_lower, ymax=PI_upper), alpha = .3) +
-  geom_point(data = d_Kline, aes(d_Kline$population, d_Kline$total_tools, fill=d_Kline$contact), shape=21)
+  geom_point(data = d_Kline, aes(d_Kline$population, d_Kline$total_tools, fill=d_Kline$contact), shape=21) +
+  ggtitle("Scientific Model")
 
 ```
 
@@ -302,13 +304,13 @@ The parameter λ is the expected mean of a Poisson model, but it can also be tho
 
 $\lambda = \pi / \tau$
 
-Here we will learn about modeling a poisson output with different time period.
+Here we will learn about modeling a Poisson output with different time period.
 For example, we have the *daily* record of the occurence of an event in place A. Also, we have the *weekly* record of the same event in place B. How can we compare these two records?
 
 ### Data
-Let's create the fake data. Assuming that the ouuurence rates are 1.5/day in place A and 0.5/day in place B.
+Let's create the fake data. Assuming that the occurence rates are 1.5/day in place A and 0.5/day in place B.
 
-We want to estimate these two ouuurence rates using one model.
+We want to estimate these two occurence rates using one model.
 ```{r}
 num_days = 30
 y_daily = rpois( num_days , 1.5 )
