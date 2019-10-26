@@ -49,10 +49,10 @@ $log(\lambda_i) = \alpha + \beta x$
 
 CH11 in Rethinking Ver2.
 
-I use the model in the Ver2. textbook since it's easier to understand.
+I use the model code in the Ver2. textbook since it's easier to understand.
 
 
-$y \sim {\sf Binom}(n, p) \\ logit(p_i) = \alpha + \beta x$
+$y \sim {\ Binomial}(n, p) \\ logit(p_i) = \alpha + \beta x$
 
 * Logistic regression: outcome = 1 or 0
 * Aggregated binomial regression: outcome is count of success
@@ -478,7 +478,7 @@ data {
 }
 
 parameters {
-	real alpha[L];
+	real alpha[L]; // alpha[2], male / female
 }
 
 transformed parameters {
@@ -494,6 +494,7 @@ model {
 
 	// prior
 	alpha ~ normal(0, 1.5);
+
 }
 generated quantities {
 	vector[N] log_lik;
