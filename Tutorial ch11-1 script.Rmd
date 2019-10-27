@@ -335,13 +335,28 @@ This mixture can be described using 2 parameters $p_{drink}$, the probability of
 $Pr(y = 0|p_{drink}, \lambda) = Pr(drink|p_{drink}) + (1 - Pr(drink|p_{drink})) * Pr(0|\lambda)$
 $Pr(y > 0|p_{drink}, \lambda) = (1 - Pr(drink|p_{drink})) * Pr(>0|\lambda)$
 
-Calculate the log likelihood is straightfoward, we just take the log on $Pr(y = 0|p_{drink}, \lambda)$ and $Pr(y > 0|p_{drink}, \lambda)$. 
+And the log-likelihood will be: 
 
-The result (in Stan syntax):
-$y = 0: log(p) + log(1 - p) * PoissonLpmf(0|\lambda)$
-$y > 0: log(1 - p) * PoissonLpmf(y|\lambda)$
+$y = 0: log(p + (1-p)*Pr(Poisson(0|\lambda))$
+$y > 0: log((1 - p) * Poisson(y|\lambda)) = log(1-p) + Poisson\_lpmf(y|lambda)$
 
-Let's simulate a fake data
+ref: https://mc-stan.org/docs/2_20/functions-reference/composed-functions.html
+
+There are some tricks modeling this mixture model. 
+First is the use of `log_mix` function, which calculates the sum of two log-likelihood easily. 
+
+`log_mix` function is defined as:
+
+$log\_mix(\theta, \lambda_1, \lambda_2) = log(\theta \exp(\lambda_1) + ( 1 - \theta) \exp(\lambda_2))$
+
+As a result, 
+$y = 0: \\ log(p + (1-p)*Pr(Poisson(0|\lambda)) \\ = log(p*exp(0) + (1-p)*exp(Poisson\_lpmf(0|\lambda))) \\ = log\_mix(p, 0, Poisson\_lpmf(0|\lambda))$
+
+
+Second is to use `log1m` function instead of using log(1-x) directly. `log1m` ensures that there is no precision problem when (1-x) is close to 0. 
+
+
+Before building the model, let's simulate a fake data.
 ```{r}
 # define parameters
 prob_drink = 0.2 # 20% of days
@@ -367,10 +382,8 @@ ggplot() +
   geom_histogram(data = d_monk %>% filter(drink==0), aes(output))
   
 ```
-There are some tricks modeling this mixture model.
-ref: https://mc-stan.org/docs/2_20/functions-reference/composed-functions.html
 
-* if statement: there are two siturations in the 
+Here we follow the above tricks to build the model.
 ```{r}
 m11.2.1 = "
 data {
@@ -401,6 +414,7 @@ model {
 	
 
 }
+
 generated quantities {
 	real log_lik[N];
 	for (i in 1:N){
@@ -419,8 +433,10 @@ fit11.2.1 = stan(model_code = m11.2.1, data = dat11.2.1,
                  cores = 2, chains = 2)
 ```
 
-## ordered categorical regression
-### ordered outcome
-### ordered predictor
+The posterior estimations are consistent with the data generating process as the fake data.
+```{r}
+summary(fit11.2.1)
+```
+
 
 
