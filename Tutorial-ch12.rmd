@@ -1,0 +1,170 @@
+---
+title: "Tutorial ch12"
+author: "Ryan Huang"
+date: "11/16/2019"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+
+```{r, results='hide'}
+library(rethinking)
+library(rstan)
+library(tidyverse)
+library(gridExtra)
+library(skimr) # for n_unique func
+library(DMwR) # for unscale func
+compare = rethinking::compare
+```
+# CH12 Multilevel Models
+ch13 Models without Amnesia in ver.2
+
+In this chapter we will learn about mutilevel models. Simply speaking, these models are like assigning priors on priors instead of assigning fixed priors.
+
+Considering a data with many *clusters*, for example, the tadpoles in different *ponds*. If we want to estimate the survival rates of them in different ponds, we would set a *fixed* prior for the parameters(survival rates at different ponds) in previous chapters. In this setting, each of the parameters are estimated independendly with no information sharing between ponds. However, this is not consistent with the reality. In the real world, we gain more experience as we see more ponds. So our prior can be set *adatively*. In this chapter we will learn about mutilevel models, in which information will be shared across clusters.
+
+## One Cluster
+### Data
+```{r}
+data(reedfrogs)
+d_frogs = 
+  reedfrogs %>% 
+    mutate(tank = 1:nrow(reedfrogs))
+str(d_frogs)
+```
+### Fixed prior model
+Let's do the *fixed* effect model from the previous chapter first.
+```{r, results='hide'}
+m12.1.1 = "
+data {
+	int N_tank;
+	int N[N_tank];
+	int S[N_tank];
+	int tank[N_tank];
+}
+
+parameters {
+	real a[N_tank];
+}
+
+transformed parameters {
+	real p[N_tank];
+	
+	for (i in 1:N_tank){
+		p[i] = inv_logit(a[i]);
+  }
+}
+
+model {
+	for (i in 1:N_tank){
+    	S[i] ~ binomial(N[i], p[i]);
+  	}
+	a ~ normal(0, 1.5);
+}
+
+"
+
+dat12.1.1 = list(
+  N_tank = d_frogs %>% nrow(),
+  N = d_frogs$density,
+  S = d_frogs$surv,
+  tank = d_frogs$tank
+)
+
+fit12.1.1 = stan(model_code = m12.1.1, data = dat12.1.1, iter = 2000, chains = 2, cores = 2)
+
+```
+
+
+
+### Adative prior (Multilevel) model
+```{r, results='hide'}
+m12.1.2 = "
+data {
+	int N_tank;
+	int N[N_tank];
+	int S[N_tank];
+	int tank[N_tank];
+}
+parameters {
+	real a_bar;
+	real<lower=0> a_sigma;
+	real a[N_tank];
+}
+transformed parameters {
+	real p[N_tank];
+	for (i in 1:N_tank) {
+		p[i] = inv_logit(a[i]);
+	}
+}
+model {
+	// adative prior
+	a ~ normal(a_bar, a_sigma);
+	a_bar ~ normal(0, 1.5);
+	a_sigma ~ exponential(1);
+
+	// model
+	for (i in 1:N_tank){
+		S[i] ~ binomial(N[i], p[i]);
+	}
+	
+}
+generated quantities {
+	real log_lik[N_tank];
+	for	(i in 1:N_tank){
+		log_lik[i] = binomial_lpmf(S[i] | N[i], p[i]);
+	}
+}
+"
+
+dat12.1.2 = dat12.1.1
+
+fit12.1.2 = stan(model_code = m12.1.2, data = dat12.1.2, cores = 2, iter = 2000, chains = 2)
+```
+
+### Posterior Comparison
+Let’s plot and compare the posterior means from models m12.1.1 and m12.1.2.
+* Horizontal axis: tank index, from 1 to 48
+* Vertical axis: proportion of survivors in a tank
+* Circles: raw proportions from observed data
+* Pink points: fixed prior model medians
+* Blue points: multilevel model medians
+```{r}
+post12.1.1 = as.data.frame(fit12.1.1, pars="p") %>% apply(., 2, median)
+post12.1.2 = as.data.frame(fit12.1.2, pars="p") %>% apply(., 2, median)
+d_frogs %>% 
+  mutate(
+    density_size = rep(c("small","medium","large"), each=16),
+    fixed_model = post12.1.1,
+    adative_model = post12.1.2
+         ) %>% 
+  ggplot() +
+  geom_point(aes(tank, propsurv), shape=1) +
+  geom_point(aes(tank, post12.1.1), shape=21, fill="pink", alpha=0.5) +
+  geom_point(aes(tank, post12.1.2), shape=21, fill="blue") +
+  geom_vline(xintercept = c(17, 33), alpha=0.5) +
+  geom_hline(yintercept = d_frogs$propsurv %>% mean, alpha=0.5, linetype="dashed") +
+  annotate(geom = "text", x=c(8,25,42), y=0.1, label=c("small tank", "medium tank", "large tank"))
+```
+We can observe 3 things from the above plot.
+1. The multilevel estimate is closer to the dashed line than the raw empirical estimate, which is called *shrinkage*
+2. The estimates for the smaller tanks have shrunk more
+3. Shrinkage is stronger when a tank’s raw proportion is far from the dashed line.
+
+Compared with the fixed effect model, the varying effect is identical differences. It's reasonable since the result of adative prior `a_bar` and `a_sigma` are similar to what we have set in the fixed effect model.
+## More than one clusters
+In the second part of the chapter, we are going to learn about using more than one cluster. Let's use the chimpanzees data again. 
+```{r}
+data("chimpanzees")
+d_chimpanzees = chimpanzees
+str(d_chimpanzees)
+```
+
+We just need to replace the fixed priors of `actor`, `block` and `treatment` with adative priors then the model will become a multilevel one. You might wonder that `treatment` was *fixed* by the experiment, we should set fixed priors on it as well. However, the reason to use adative prior is because they provide better inference. Once the data has exchangeable index, then adative priors could help.
+
+Here is the mathmetical form of the model.
+$L_i \sim Binomial(1, p_i)$
