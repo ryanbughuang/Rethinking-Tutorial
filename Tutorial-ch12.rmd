@@ -1,5 +1,5 @@
 ---
-title: "Tutorial ch12"
+title: "Tutorial CH12 Multilevel Models"
 author: "Ryan Huang"
 date: "11/16/2019"
 output:
@@ -20,15 +20,15 @@ library(skimr) # for n_unique func
 library(DMwR) # for unscale func
 compare = rethinking::compare
 ```
-# CH12 Multilevel Models
-ch13 Models without Amnesia in ver.2
+
+**ch13 Models without Amnesia in ver.2**
 
 In this chapter we will learn about mutilevel models. Simply speaking, these models are like assigning priors on priors instead of assigning fixed priors.
 
 Considering a data with many *clusters*, for example, the tadpoles in different *ponds*. If we want to estimate the survival rates of them in different ponds, we would set a *fixed* prior for the parameters(survival rates at different ponds) in previous chapters. In this setting, each of the parameters are estimated independendly with no information sharing between ponds. However, this is not consistent with the reality. In the real world, we gain more experience as we see more ponds. So our prior can be set *adatively*. In this chapter we will learn about mutilevel models, in which information will be shared across clusters.
 
-## One Cluster
-### Data
+# One Cluster
+## Data
 ```{r}
 data(reedfrogs)
 d_frogs = 
@@ -36,7 +36,7 @@ d_frogs =
     mutate(tank = 1:nrow(reedfrogs))
 str(d_frogs)
 ```
-### Fixed prior model
+## Fixed prior model
 Let's do the *fixed* effect model from the previous chapter first.
 ```{r, results='hide'}
 m12.1.1 = "
@@ -81,7 +81,7 @@ fit12.1.1 = stan(model_code = m12.1.1, data = dat12.1.1, iter = 2000, chains = 2
 
 
 
-### Adative prior (Multilevel) model
+## Adative prior (Multilevel) model
 ```{r, results='hide'}
 m12.1.2 = "
 data {
@@ -126,7 +126,7 @@ dat12.1.2 = dat12.1.1
 fit12.1.2 = stan(model_code = m12.1.2, data = dat12.1.2, cores = 2, iter = 2000, chains = 2)
 ```
 
-### Posterior Comparison
+## Posterior Comparison
 Let’s plot and compare the posterior means from models m12.1.1 and m12.1.2.
 * Horizontal axis: tank index, from 1 to 48
 * Vertical axis: proportion of survivors in a tank
@@ -156,15 +156,88 @@ We can observe 3 things from the above plot.
 3. Shrinkage is stronger when a tank’s raw proportion is far from the dashed line.
 
 Compared with the fixed effect model, the varying effect is identical differences. It's reasonable since the result of adative prior `a_bar` and `a_sigma` are similar to what we have set in the fixed effect model.
-## More than one clusters
-In the second part of the chapter, we are going to learn about using more than one cluster. Let's use the chimpanzees data again. 
+
+
+
+# More than one clusters
+In the second part of the chapter, we are going to learn about using more than one cluster. Let's use the chimpanzees data again (textbook: ch10_ver1, ch11_ver2; tutorial: ch10). 
 ```{r}
 data("chimpanzees")
 d_chimpanzees = chimpanzees
+d_chimpanzees$treatment = 1 + d_chimpanzees$prosoc_left + 2*d_chimpanzees$condition
 str(d_chimpanzees)
+```
+##Fixed prior (original model)
+
+$L_i \sim Binomial(1,p_i) \\ logit(p_i) = \alpha_{actor[i]} + \beta_{treat[i]} + \gamma_{block[i]} \\ \alpha \sim Normal(0, 1.5) \\ \beta \sim Normal(0, 0.5) \\ \gamma \sim Normal(0, 0.5)$
+```{r}
+m12.2.1 = "
+data {
+	int N;
+	int pulled_left[N];
+
+	int A;
+	int actor[N];
+
+	int T;
+	int treatment[N];
+	
+	int B;
+	int block[N];
+
+}
+parameters {
+	real alpha[A];
+	real beta[T];
+	real gamma[B];
+}
+transformed parameters {
+	real p[N];
+	for (i in 1:N){
+		p[i] = inv_logit(alpha[actor[i]] + beta[treatment[i]] + gamma[block[i]]);
+	}
+}
+model {
+
+	// model
+	for (i in 1:N){
+		pulled_left[i] ~ binomial(1, p[i]);
+	}
+
+
+	// prior
+	alpha ~ normal(0, 1.5);
+	beta ~ normal(0, .5);
+	gamma ~ normal(0, .5);
+}
+
+"
+dat12.2.1 = list(
+  N = d_chimpanzees %>% nrow(),
+  pulled_left = d_chimpanzees$pulled_left %>% as.integer,
+  A = d_chimpanzees$actor %>% n_unique(),
+  actor = d_chimpanzees$actor %>% as.integer(),
+  T = d_chimpanzees$treatment %>% n_unique(),
+  treatment = d_chimpanzees$treatment %>% as.integer(),
+  B = d_chimpanzees$block %>% n_unique(),
+  block = d_chimpanzees$block %>% as.integer())
+  
+fit12.2.1 = stan(model_code = m12.2.1, data = dat12.2.1, cores = 2, chains = 2)
+stan_model(model_code = m12.2.1)
 ```
 
 We just need to replace the fixed priors of `actor`, `block` and `treatment` with adative priors then the model will become a multilevel one. You might wonder that `treatment` was *fixed* by the experiment, we should set fixed priors on it as well. However, the reason to use adative prior is because they provide better inference. Once the data has exchangeable index, then adative priors could help.
 
 Here is the mathmetical form of the model.
-$L_i \sim Binomial(1, p_i)$
+$L_i \sim Binomial(1, p_i) \\ logit(p_i) = \alpha_{actor[i]} + \gamma_{block[i]} + \beta_{treat[i]} \\ \alpha \sim Normal(\bar\alpha, \sigma_\alpha) \\ \beta \sim Normal(0, \sigma_\beta) \\ \gamma \sim Normal(0, \sigma_\gamma)$
+
+So, the parameters of $actor_{[1]}$ to $actor_{[7]}$ will have the same prior distribution and the hyper-parameters of the distribution will be estimated from the data. The same logic goes for `block` and `treatment`. 
+
+Note that there is only one mean parameter $\bar\alpha$. We can’t identify a separate mean for each varying intercept type, because all intercepts are added together in the linear function (Recall right leg and left leg example).
+
+```{r}
+
+```
+
+
+
