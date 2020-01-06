@@ -21,18 +21,16 @@ library(DMwR) # for unscale func
 compare = rethinking::compare
 ```
 
-# CH11 Mixture and Monster
-CH11 in ver.1
-
-CH12 in ver.2 
+**CH11 in ver1, CH12 in ver.2 **
 
 In this chapter we will try to combine different likelihood functions in a model to solve some common issues of standard models. These models are often harder to estimate and to understand, but they are important tools. Be sure to check these mixtures and monsters by simulating dummy data and then recovering the data-generating process by fitting the model to the dummy data.
 
-## over-dispersion
+#Over-Dispersion
 For a counting model like binomial model or Poisson model, the variance is a function of the expected value. For example the expected value and the variance of a Poisson distribution are both $lambda$ and those of a binomial distribution are $np$ and $np(1-p)$. However, the variance can be larger than this amount in some cases, implying some variables are omitted. This phenomenon is called *over-dispersion*. Although the best solution of is to include the omitted variables that accounts for the variance, we can still mitigate the effects of over-dispersion with some modeling tricks. 
 
-### Continous Mixture Model
-#### Beta-binomial
+## Continous Mixture Model
+
+### Beta-binomial
 
 Take the **UCB admit** dataset for example, how can we make the correct inference that gender effect is not significant without the information of department?
 ```{r}
@@ -212,7 +210,7 @@ p3 = result11.1.1 %>%
 p3
 ```
 
-#### Gamma-Poisson
+### Gamma-Poisson
 The gamma Poisson model is similar to the beta binomial model. It uses a gamma distribution to describe the **rates** of Poisson distributions. We will use the ocean tool example again. Let's look at the scientific model from m10.3.2 first.
 
 ![](tutorialch10.3.2.png)
@@ -237,7 +235,7 @@ test_Kline = data.frame(
 )
 ```
 
-```{r}
+```{r, results='hide'}
 m11.1.2 = "
 data {
 	int N;
@@ -301,7 +299,7 @@ dat11.1.2 = list(
 fit11.1.2 = stan(model_code = m11.1.2, 
                  data = dat11.1.2, 
                  cores = 2, chains = 2, 
-                 warmup = 2000, iter = 3000)
+                 warmup = 1500, iter = 3000)
 ```
 
 From the following posterior plot, we can tell that the gamma Poisson model makes Hawaii less influential to the low cantact islands, which also avoid the overfitting problem.
@@ -321,11 +319,11 @@ p11.1.2 = result11.1.2 %>%
 p11.1.2
 ```
 
-### Multilevel Model
-CH12 Multilevel Model in ver1.
-CH13 Models without Amnesia in ver2.
+##Multilevel model
 
-## zero-inflated
+The over-dispersion problem can also be solved by constructing a multilevel model. With that, we can assign our own *prior* distribution on the *prior*.
+
+#Zero-inflated
 Let's move on to the second part of this chapter, **mixture models**. In many ocassions, the things we observe are not emissions from any simple process. Instead, they are mixtures of multiple processes. A mixture model uses more than one probability distribution to model a mixture of process.
 
 For example, each day, a large number of monks finish copying a small number of manuscripts. The process is Poisson. Now imagine that the monks drink on some days. On those days, no manuscripts are completed. This is a mixture process: there will be zeros on working days and drinking days, as well. If we want to estimate the correct lambda of the Poisson process, we have to estimate how often they drink at the same time.
@@ -384,7 +382,7 @@ ggplot() +
 ```
 
 Here we follow the above tricks to build the model.
-```{r}
+```{r, results='hide'}
 m11.2.1 = "
 data {
 	int N;
@@ -429,13 +427,13 @@ dat11.2.1 = list(
   y = d_monk$output
 )
 fit11.2.1 = stan(model_code = m11.2.1, data = dat11.2.1,  
-                 warmup = 2000, iter = 2000, 
+                iter = 2000, 
                  cores = 2, chains = 2)
 ```
 
 The posterior estimations are consistent with the data generating process as the fake data.
 ```{r}
-summary(fit11.2.1)
+print(fit11.2.1, pars = c("p", "lambda"))
 ```
 
 

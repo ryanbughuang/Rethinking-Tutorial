@@ -23,9 +23,9 @@ compare = rethinking::compare
 
 # CH11 Mixture and Monster
 
-## Ordered categorical regression
+# Ordered categorical regression
 
-### Ordered outcome
+## Ordered outcome
 Sometimes we have outcome variables that is discrete but in which the values indicate different ordered levels. These ordered variables should be treated differently from discrete variables or continuous variables. 
 Our prediction of a new observation should be the **relative probabilities** of it in different levels (ex: 1-20%, 2-10%,  3-30%, 4-5%, 6-..., 7-...). 
 
@@ -79,7 +79,7 @@ p11.1.3 =
 p11.1.3
 ```
 
-#### Math Form
+### Math Form
 These intercepts or cutpoints of the cumulative-log-odd values are the parameters we want to estimate in the ordered outcome problem. We will get the relative probabilities by  using the inverse link function to translate the intercepts(in logit scale) to cumulative probability and doing subtractions.
 
 $p_k = Pr(y_i = k) = Pr(y_i \leq k) - Pr(yi \leq k-1)$
@@ -106,7 +106,7 @@ p11.1.4
 ```
 The blue lines are our goal, the relative probabilities of each outcome.
 
-#### Stan Model
+### Stan Model
 Let's insert the 3 scenarios and their interactions into the model. To include predictor variables, we define the log-cumulative-odds of each response k as a sum of its intercept $\alpha_k$ and a typical linear model.
 
 Our 3 scenarios and their interactions:
@@ -126,7 +126,7 @@ where $\beta_I$ is just the interaction.
 
 Notice that we **subtract** the linear part from the intercept because a subtraction shifts the probability to higher value. So a positive $beta$ coefficient means a positive impact on the outcome probability value.
 
-##### Model code
+#### Model code
 ```{r}
 # Data for prediction
 A = 0:1
@@ -228,7 +228,7 @@ print(fit11.3.1, pars = c("bA", "bC", "bI", "bIA", "bIC", "cutpoints"))
 The coeffifients are all negatives, meaning that each of these scenarios reduce the rating.
 
 
-##### Posterior plot
+#### Posterior plot
 There is no perfect way plotting the log-cumulative-odds. One common way is to use the horizontal axis for a predictor variable and the vertical axis for cumulative probability.
 
 ref:https://stackoverflow.com/questions/34044725/r-split-histogram-according-to-factor-level
@@ -251,7 +251,7 @@ reshape_pred %>%
 ```
 
 
-### Ordered predictor
+## Ordered predictor
 The last part of this chapteris about treating ordered variables when they are predictors. We will use the `edu` variable in the same dataset as our example.
 
 First we need to code the 8 levels to the right order.
@@ -268,7 +268,7 @@ To make it more convenient for interpretation, we define $\beta_E$ as the total 
 
 This $\beta_E$ move also helps us define priors. If the prior expectation is that all of the levels have the same incremental effect, then we want all the $\delta_j$ to have the same prior. 
 
-##### Dirichlet Distribution
+### Dirichlet Distribution
 We use a Dirichlet distribution as the prior of $\delta_j$. It's the multinomial extention of the beta distribution. In the beta, these were the parameters $\alpha$ and $\beta$, the prior counts of success and failures, respectively. In the Dirichlet, there is a just a long vector $\alpha$ with pseudo-counts for each possibility. If we assign the same value to each, it is a uniform prior. The larger the $\alpha$ values, the the stronger prior that the probabilities are all the same.
 
 Beta(a, b): a=成功次數, b=失敗次數 (prior)
@@ -278,6 +278,7 @@ Beta(a, b): a=成功次數, b=失敗次數 (prior)
 dirichlet是一樣的邏輯，只是從(a,b)變長成(a1, a2, a3, a4....) a的各個值越大依樣代表prior越強
 
 Let's compare 100 samples from a weak Dirichlet prior a = {2,2,2,2,2} and a strong one a = {100, 100, 100, 100, 100}
+
 ```{r}
 library(gtools)
 
@@ -297,9 +298,7 @@ for (i in 1:100) {
 grid.arrange(p1, p2, nrow=1)
 ```
 
-##### Stan model
-Now we can code the model
-
+### Stan model
 ```{r, results='hide'}
 m11.3.2 = "
 data {
