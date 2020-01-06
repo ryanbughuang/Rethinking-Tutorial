@@ -21,7 +21,7 @@ library(DMwR) # for unscale func
 compare = rethinking::compare
 ```
 
-**ch13 Models without Amnesia in ver.2**
+**Ch13 Models without Amnesia in ver.2**
 
 In this chapter we will learn about mutilevel models. Simply speaking, these models are like assigning priors on priors instead of assigning fixed priors.
 
@@ -128,11 +128,17 @@ fit12.1.2 = stan(model_code = m12.1.2, data = dat12.1.2, cores = 2, iter = 2000,
 
 ## Model Comparison
 Let’s plot and compare the posterior means from models m12.1.1 and m12.1.2.
+
 * Horizontal axis: tank index, from 1 to 48
+
 * Vertical axis: proportion of survivors in a tank
+
 * Circles: raw proportions from observed data
+
 * Pink points: fixed prior model medians
+
 * Blue points: multilevel model medians
+
 ```{r}
 post12.1.1 = as.data.frame(fit12.1.1, pars="p") %>% apply(., 2, median)
 post12.1.2 = as.data.frame(fit12.1.2, pars="p") %>% apply(., 2, median)
@@ -150,9 +156,13 @@ d_frogs %>%
   geom_hline(yintercept = d_frogs$propsurv %>% mean, alpha=0.5, linetype="dashed") +
   annotate(geom = "text", x=c(8,25,42), y=0.1, label=c("small tank", "medium tank", "large tank"))
 ```
-We can observe 3 things from the above plot.
+
+We can observe 3 things from the above plot:
+
 1. The multilevel estimate is closer to the dashed line than the raw empirical estimate, which is called *shrinkage*
+
 2. The estimates for the smaller tanks have shrunk more
+
 3. Shrinkage is stronger when a tank’s raw proportion is far from the dashed line.
 
 Compared with the fixed effect model, the varying effect is identical differences. It's reasonable since the result of adative prior `a_bar` and `a_sigma` are similar to what we have set in the fixed effect model.
@@ -160,7 +170,10 @@ Compared with the fixed effect model, the varying effect is identical difference
 
 
 # More than one clusters
-In the second part of the chapter, we are going to learn about using more than one cluster. Let's use the chimpanzees data again (textbook: ch10_ver1, ch11_ver2; tutorial: ch10). 
+In the second part of the chapter, we are going to learn about using more than one cluster. 
+
+Let's use the chimpanzees data again (textbook: ch10_ver1, ch11_ver2; tutorial: ch10). 
+
 ```{r}
 data("chimpanzees")
 d_chimpanzees = chimpanzees
@@ -170,6 +183,7 @@ str(d_chimpanzees)
 ## Fixed prior (original model)
 
 $L_i \sim Binomial(1,p_i) \\ logit(p_i) = \alpha_{actor[i]} + \beta_{treat[i]} + \gamma_{block[i]} \\ \alpha \sim Normal(0, 1.5) \\ \beta \sim Normal(0, 0.5) \\ \gamma \sim Normal(0, 0.5)$
+
 ```{r, results='hide'}
 m12.2.1 = "
 data {
@@ -239,11 +253,12 @@ print(fit12.2.1, pars = fit12.2.1@model_pars[1:3])
 We just need to replace the fixed priors of `actor`, `block` and `treatment` with adative priors then the model will become a multilevel one. You might wonder that `treatment` was *fixed* by the experiment, we should set fixed priors on it as well. However, the reason to use adative prior is because they provide better inference. Once the data has exchangeable index, then adative priors could help.
 
 Here is the mathmetical form of the model.
+
 $L_i \sim Binomial(1, p_i) \\ logit(p_i) = \alpha_{actor[i]} + \gamma_{block[i]} + \beta_{treat[i]} \\ \alpha \sim Normal(\bar\alpha, \sigma_\alpha) \\ \beta \sim Normal(0, \sigma_\beta) \\ \gamma \sim Normal(0, \sigma_\gamma)$
 
 So, the parameters of $actor_{[1]}$ to $actor_{[7]}$ will have the same prior distribution and the hyper-parameters of the distribution will be estimated from the data. The same logic goes for `block` and `treatment`. 
 
-Note that there is only one mean parameter $\bar\alpha$. We can’t identify a separate mean for each varying intercept type, because all intercepts are added together in the linear function (Recall right leg and left leg example).
+Note that there is only one mean parameter $\bar\alpha$. We can’t identify a separate mean for each varying intercept type, because all intercepts are added together in the linear function (recall right leg and left leg example).
 
 ```{r, results='hide'}
 m12.2.2 = "
@@ -315,7 +330,6 @@ print(fit12.2.2, pars = fit12.2.2@model_pars[1:7])
 compare(fit12.2.1, fit12.2.2)
 ```
 The results show that the model with adaptive prior is slightly better with lower WAIC. Besides, the second model has more details for us. By comparing the three sigma values, we can tell that individual difference of chimpenzees accounts for most of the variance.
-
 `sigma_gamma` is pretty close to 0 meaning that there is almost no variance within each block. We can conclude that whether we include block or not hardly matters in this case. 
 ```{r}
 post12.2.2 = as.data.frame(fit12.2.2, pars = c("sigma_alpha", "sigma_gamma", "sigma_beta"))
@@ -327,6 +341,7 @@ post12.2.2 %>%
   xlab("standard deviation") +
   annotate("text", x = c(.5, .8, 1.7), y = c(900, 650, 300), label = c("block", "treat", "chimp"))
 ```
+
 # Fix divergent transitions
 With the models in the previous section, Stan reported warnings about divergent transitions. This means the simulation has some error, compared to the ideal one. If our model has many divergent transitions, then it might resulting in a biased posterior. We will introduce two ways to deal with the problem.
 
@@ -349,8 +364,8 @@ For example, the following 2 forms are identical while the second one will be ea
 $\alpha \sim Normal(\mu, \sigma) \\ \alpha \sim \mu + \sigma * Normal(0, 1)$
 
 In the Bayesian statistics, this form with mean = 0 and s.d = 1 in the distribution statement is known as the **non-centered** parameterization. 
-
 Let's build a non-centered version of model 12.2.2. We can begin with the mathmetical form:
+
 $L_i \sim Binomial(1, p_i) \\ logit(p_i) = \bar\alpha + \alpha_{actor[i]} * \sigma_{\alpha}+ \gamma_{block[i]} * \sigma_{\gamma} + \beta_{treat[i]} * \sigma_{\beta} \\ \alpha \sim Normal(0,1) \\ \beta \sim Normal(0, 1) \\ \gamma \sim Normal(0, 1)$
 
 ![](tutorialch12.png)
@@ -455,6 +470,7 @@ We need to keep in mind that sometimes the centered form is better.The centered 
 
 #Prediction in Multilevel Model
 "Prediction" in a multilevel model requires additional choices. If we wish to validate a model using the training data, that is one thing. But if we instead wish to compute predictions for new data/testing data, other than the ones observed in the sample, that is quite another.
+
 ##In Sample Prediction
 I will use the chimpenzee example again. The **in sample** prediction in this case will be making the prediction(retrodiction) on any of the chimp in the training data.
 
@@ -611,9 +627,8 @@ grid.arrange(p1, p2)
 ##Out Sample Prediction
 When we’d like to make prediction about the whole species, not just the seven chimpenzees we have, it's time for out of sample prediction. In this situation, the individual actor intercepts aren’t of interest, but the distribution of them is.
 
-The ideas of CI and PI can also be applied here. We can either predict for an "average" chimpanzee, whose intercept is exactly $\bar\alpha$, or an individual chimpanzee, whose intercept is drawn from $N(\bar\alpha, \sigma_{alpha})$. 
+The ideas of CI and PI can also be applied here. We can either predict for an "average" chimpanzee, whose intercept is exactly $\bar\alpha$, or an individual chimpanzee, whose intercept is drawn from $N(\bar\alpha, \sigma_{alpha})$. They will be denoted as **p_bar** and **p_sim** respectively.
 
-They will be denoted as **p_bar** and **p_sim** respectively.
 The predictions for an average chimpanzee help us to understand the impact of different treatments. 
 The predictions for an individual one illustrate how variable different chimpanzees are.
 
@@ -718,6 +733,7 @@ p4 =
 
 grid.arrange(p3,p4, nrow=1)
 ```
+
 ###Apply Method
 ```{r}
 #post = extract.samples(fit12.2.2c, pars=fit12.2.2c@model_pars[1:7])
