@@ -1,0 +1,222 @@
+---
+title: "Tutorial ch13 Advance Covariance"
+author: "Ryan Huang"
+date: "1/10/2020"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+
+```{r, results='hide'}
+library(rethinking)
+library(rstan)
+library(tidyverse)
+library(gridExtra)
+library(skimr) # for n_unique func
+library(DMwR) # for unscale func
+library(MASS)
+compare = rethinking::compare
+```
+
+#Intro
+**Ch13 in ver.1, Ch14 in ver.2**
+This is the first chapter in the course about multivariate model, which means we will analyze more than one outcome variable at a time.
+
+The concepts and codes are much more complicated than any other chapter in the textbook. Honestly I didn't understand most of the content in the class. I hope my learning experience can help you understand the material. Read the textbook may help you understand them better.
+
+In previous chapter, we learn about the construction of **varying intercepts** model. In these models, there is only one parameters in each group. In this chapter, we will learn about the how to **pool information between parameters** when there are more than one parameters(ex: intercepts and slopes) in one group.
+
+We will talk about these cases in the tutorial:
+
+  1. more than one intercept(categorical variables, ver1-ch13.2)
+  
+  2. more than one intercept in many clusters(categorical variables, ver2-ch14.2)
+  
+  3. intercepts + slopes(categorical variable + continuous variables(ch14.4)
+  
+  4. gaussian process(continous categories, ver2-ch14.5)
+
+
+#Case1: more than one intercept
+Suppose we have a record of the waiting time of two cafés. The cafés vary in their average wait times($\alpha_{cafe[i]}$), and in their differences between morning and afternoon($\beta_{cafe[i]}$). There are now 2 parameters we are interested in now.
+
+In tradictional approach, we will assign different prior for the two parameters, assuming they are indepent from others. But the fact is that they are probably related. At a popular café, wait times are on average long in the morning. But the same café will be much less busy in the afternoon since they have more staffs and fewer customers. But at a less popular café, the difference will be small. 
+
+To pool the information from 2 parameters, we have to model their joint population, which means by modeling their covariance. The device that makes this possible is a **multivariate Gaussian distribution** for all of the varying effects.
+
+In the first example, we will generate the fake café data and do the retrodiction to understand how the model works.
+
+##Set hyper pars
+Firstly we have to set the parameters for all cafes. 
+```{r}
+a = 3.5         #average morning wait time
+b = (-1)        #average difference
+sigma_a = 1     #std dev in wait time
+sigma_b = .5    #std dev in difference
+rho = (-0.7)    # correlation between a and b
+```
+
+Since we need to estimate 2 parameters at a time, we will need a 2-dimensional multivariate gaussian distribution. A 2-D multivariate gaussian is consisted of a 2x1 Mu vector and a 2x2 Sigma matrix.
+
+$Mu = \left\{\begin{matrix} avg \ par1 \\ avg \ par2\end{matrix}\right\} \\ Sigma=\left\{\begin{matrix}var \ of \ par1 & cov \ of \ par1 \ and \ par 2  \\cov \ of \ par1 \ and \ par 2 & var \ of \ par2 \end{matrix} \right\}$
+
+or in math form:
+
+$Mu = \left\{\begin{matrix} \bar\alpha \\ \bar\beta\end{matrix}\right\} \\ Sigma=\left\{\begin{matrix}\sigma^2_{\alpha} & \sigma_{\alpha}\sigma_{\beta}\rho \\  \sigma_{\alpha}\sigma_{\beta}\rho & \sigma^2_{\beta} \end{matrix} \right\}$
+
+Though we can build the Sigma matrix simply by putting the 4 elements all together, the recommended method is to do matrix multiplication:
+
+$Sigma=\left\{\begin{matrix}\sigma^2_{\alpha} & \sigma_{\alpha}\sigma_{\beta}\rho \\  \sigma_{\alpha}\sigma_{\beta}\rho & \sigma^2_{\beta} \end{matrix} \right\} = \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\} \times \left\{\begin{matrix}1 & \rho \\  \rho & 1 \end{matrix} \right\} \times \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\}$
+
+
+```{r}
+Mu = c( a , b )
+cov_ab = sigma_a*sigma_b*rho
+
+#Method 1:
+Sigma = matrix( c(sigma_a^2,cov_ab,cov_ab,sigma_b^2) ) 
+
+#Method 2(recommend):
+sigmas = c(sigma_a,sigma_b)
+Rho = matrix( c(1,rho,rho,1) , nrow=2 )
+Sigma = diag(sigmas) %*% Rho %*% diag(sigmas)
+```
+
+##cafe pars
+Now we’re ready to simulate some cafés from the hyper parameters we have set. The results are the **average wait time** and **average difference** of each cafe.
+```{r}
+N_cafes = 20
+vary_effects = mvrnorm( N_cafes , Mu , Sigma )
+
+vary_effects = data.frame(
+  a_cafe = vary_effects[,1],
+  b_cafe = vary_effects[,2]
+)
+
+vary_effects
+```
+The result is a 20x2 matrix. Each row is a cafe while the first column is the wait time and the second column is the difference.
+
+Let's visualize the result:
+```{r}
+p1.1 = vary_effects %>% 
+  ggplot(aes(a_cafe, b_cafe)) +
+  geom_point()
+
+for (i in c(c(0.1,0.3,0.5,0.8,0.99))) {
+  p1.1 = p1.1 + 
+    stat_ellipse(type = "norm", level = i, alpha=.2)
+}
+
+p1.1
+```
+We can use the `stat_ellipse` function to plot a 2-D gaussian distribution. By setting different `level`, the function will plot the ellipses with different confidence intervals.
+
+##Draw observation
+The last step is to draw observations from the **average wait time** and **average difference** of each cafe. We will *visit* each cafe by 10 times, 5 in the morning and 5 in the afternoon. The resulting d_cafe dataframe will have 200 rows with 100 rows in the morning.
+```{r}
+N_visits = 10
+sigma = 0.5 # std dev within cafes
+
+d_cafe = data.frame(
+  cafe_id = rep( 1:N_cafes , each=N_visits ),
+  afternoon = rep(0:1,N_visits*N_cafes/2), # 0 = morning, 1 = afternoon
+  mu = vary_effects$a_cafe[cafe_id] + vary_effects$b_cafe[cafe_id]*afternoon
+) %>% 
+  mutate( wait = rnorm( N_visits*N_cafes , mu , sigma ))
+
+d_cafe %>% head()
+
+m14.1 <- map2stan(
+  alist(
+    wait ~ normal( mu , sigma ),
+    mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon, 
+    c(a_cafe,b_cafe)[cafe_id] ~ multi_normal( c(a,b) , Rho , sigma_cafe ), 
+    a ~ normal(5,2),
+    b ~ normal(-1,0.5),
+    sigma_cafe ~ exponential(1),
+    sigma ~ exponential(1),
+    Rho ~ lkj_corr(2)
+    ) , data=d_cafe %>% select(-mu) , chains=1 , cores=1 )
+```
+##Model
+Before getting into the stan model, let's briefly review what we have done in a math form:
+
+$W_i \sim Normal(\mu_i, \sigma) \\ \mu_i = \alpha_{cafe[i]} + \beta_{cafe[i]}A_i \\ \begin{bmatrix}\alpha_{cafe} \\ \beta_{cafe} \end{bmatrix} \sim MVN(\begin{bmatrix}\alpha \\ \beta \end{bmatrix}, S) \\ S = \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\} \times \left\{\begin{matrix}1 & \rho \\  \rho & 1 \end{matrix} \right\} \times \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\}$
+
+This line states that each café has 2 parameters with a prior distribution defined by the 2-D Gaussian distribution with *global* means $\alpha$ and $\beta$ and covariance matrix S.
+
+$\begin{bmatrix}\alpha_{cafe} \\ \beta_{cafe} \end{bmatrix} \sim MVN(\begin{bmatrix}\alpha \\ \beta \end{bmatrix}, S)$
+
+With this in mind, we are one step from building the stan model, how to set the prior. The prior for $\alpha, \beta, \sigma_{alpha}, \sigma_{\beta}$ are the same as previous models. The only trick is about setting the prior for the correlation matrix $R = \left\{\begin{matrix}1 & \rho \\  \rho & 1 \end{matrix} \right\}$. It isn’t easy to imagine what a distribution of
+matrices means. But in this case, the correlation
+matrix is only 2-by-2 so there is only one parameter $\rho$. For more complicated cases, the same prior, **LKJ distribution** still works.
+
+Let's see how a LKJ distribution works.  LKJcorr(eta = 2) defines a weakly informative prior on ρ that is skeptical of extreme correlations near −1 or 1. LKJ distribution has a single parameter, eta. When we eta = 1, the prior is flat. When eta becomes larger, it will be more skeptical on the extreme values(-1 or 1).
+```{r}
+?rlkjcorr
+R = rlkjcorr(n = 1000, K = 3, eta = 2)  # K: dim, eta: shape
+
+dim(R)
+
+R[1,,]
+
+rho = data.frame(
+  rho_1 = rlkjcorr(n = 1e4, K = 2, eta = 1)[,1,2], 
+   rho_2 = rlkjcorr(n = 1e4, K = 2, eta = 2)[,1,2],
+   rho_4 = rlkjcorr(n = 1e4, K = 2, eta = 4)[,1,2]
+)
+
+rho %>% ggplot()+
+  geom_density(aes(rho_1), adjust = .5) +
+  geom_density(aes(rho_2), adjust = .5) +
+  geom_density(aes(rho_4), adjust = .5) +
+  annotate(geom = "text", x = c(0,0,0), y = c(.4, .6, .9), label = c("eta = 1", "eta = 2", "eta = 4"))
+
+```
+
+We can start writing the Stan program now. We need some new coding techniques to deal with the matrixs and vectors in our model.
+```{r}
+m13.1 = ""
+```
+
+
+In tutorial ch11-1(m11.1.1), we learn about using beta-binomial model to estimate the average admit rates of male and female across all departments. 
+The result suggested that there was no difference overall. However, we also noticed that the admit rates of each department vary a lot. 
+To understand if there exist discrimination on the department level, we can estimate the parameters of all gender-department combinations.
+```{r}
+
+```
+
+
+
+#Case2: more than one intercept in many clusters
+To see how to construct a model with more than two varying effects as well as with *more than one type of cluster*, we’ll return to the chimpanzee data again.
+
+In tutorial ch12, we have hyper priors for actors, treatments and blocks respectively. The math model is:
+$L_i \sim Binomial(1, p_i) \\ logit(p_i) = \alpha_{actor[i]} + \gamma_{block[i]} + \beta_{treat[i]}$
+
+In this chapter, we can further investigate if there exists interactions among (actor, treatment) or (block, treatment).
+The linear model for $logit(p_i)$ still contains an average log-odds for each treatment, $\gamma_{TID[i]}$, an effect for each actor in each treatment $\alpha_{actor[i], TID[i]}$, and finally an effect for each block in each treatment, $\beta_{block[i], TID[i]}$.
+This yields a total of 4(treatment) + 7(actor) × 4(treatment) + 6(block) × 4(treatment) = 56 parameters to estimate.
+
+So the new likelihood function will be:
+$L_i \sim Binomial(1, p_i) \\ logit(p_i) = \alpha_{actor[i], TID[i]} + \gamma_{TID[i]} + \beta_{block[i], TID[i]}$
+
+For these interaction terms, we will need a different way to assign their priors. Since we want to **pool information** among each pair of (actor, treatment) or (block, treatment). So the parameters must come from a same prior distribution.
+We will use the **multivariate gaussian** distribution as our prior.
+```{r}
+d_chimp = data("chimpanzees")
+d_chimpanzees
+```
+
+#Case3: intercepts + slopes
+```{r}
+
+```
+
+#Case4: gaussian process
