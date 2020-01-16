@@ -131,17 +131,19 @@ d_cafe = data.frame(
 
 d_cafe %>% head()
 
-m14.1 <- map2stan(
+m13.1 <- map2stan( 
   alist(
-    wait ~ normal( mu , sigma ),
-    mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon, 
-    c(a_cafe,b_cafe)[cafe_id] ~ multi_normal( c(a,b) , Rho , sigma_cafe ), 
-    a ~ normal(5,2),
-    b ~ normal(-1,0.5),
-    sigma_cafe ~ exponential(1),
-    sigma ~ exponential(1),
-    Rho ~ lkj_corr(2)
-    ) , data=d_cafe %>% select(-mu) , chains=1 , cores=1 )
+    wait ~ dnorm( mu , sigma ),
+    mu <- a_cafe[cafe] + b_cafe[cafe]*afternoon, 
+    c(a_cafe,b_cafe)[cafe] ~ dmvnorm2(c(a,b),sigma_cafe,Rho), 
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,10),
+    sigma_cafe ~ dcauchy(0,2),
+    sigma ~ dcauchy(0,2),
+    Rho ~ dlkjcorr(2)
+),
+data=d_cafe,
+iter=5000 , warmup=2000 , chains=2 )
 ```
 ##Model
 Before getting into the stan model, let's briefly review what we have done in a math form:
