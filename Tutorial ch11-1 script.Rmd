@@ -20,7 +20,7 @@ library(skimr) # for n_unique func
 library(DMwR) # for unscale func
 compare = rethinking::compare
 ```
-
+#Intro
 **CH11 in ver1, CH12 in ver.2 **
 
 In this chapter we will try to combine different likelihood functions in a model to solve some common issues of standard models. These models are often harder to estimate and to understand, but they are important tools. Be sure to check these mixtures and monsters by simulating dummy data and then recovering the data-generating process by fitting the model to the dummy data.
@@ -45,7 +45,7 @@ d_UCBadmit
 A straightforward solution for the problem is to assign different probabilities to different rows of the data. This is the intuition of the beta-binomial model. Instead of assigning these probabilities individually, we use the beta-distribution to describe the distribution of them.
 
 Let's take a look at the beta-distribution first. A beta-distribution has two parameters, $\bar{p}$ and $\theta$. $\bar{p}$ suggests the average probability and $\theta$ describes the shape of the distribution.
-When $theta$ = 2
+When $theta$ = 2, $\bar{p}$ is distributed approximately uniformly except for the tails.
 ```{r}
 # In standard r, the parameters of rbeta function is not pbar and theta
 # use rbeta2 in rethinking package instead:
@@ -139,10 +139,10 @@ In these plots we are going to plot the posterior beta distributions of male and
 
 To plot a distribution using ggplot is something new in this class. Unlike previous examples, we have only the parameters of the distribution not the y value at each x. In base r we can use the *curve* to do this. In ggplot, the alternative is the *stat_function*.
 
-The trick here is to make a customized dbeta function which has **default value** of pbar and theta. By doing so, r can automatically assign x in the right position of the original dbeta2 function. Then I use a for loop to iterate through the parameters output by Stan and assign them to the cust_dbeta function by the *args* parameters. `?stat_function` has an example of doing this.
+The trick here is to make a customized dbeta function which has **default value** of pbar and theta. By doing so, r can automatically assign x in the right position of the original dbeta2 function. Then I use a for loop to iterate through the parameters output by Stan and assign them to the cust_dbeta function by the *args* parameters. `?stat_function` has an example of doing this. [ref](https://kohske.wordpress.com/2010/12/25/draw-function-without-data-in-ggplot2/)
+
 ```{r}
 # Posterior Beta-binomial distribution
-# ref: https://kohske.wordpress.com/2010/12/25/draw-function-without-data-in-ggplot2/
 post11.1.1 = as.data.frame(fit11.1.1, pars=c("pbar", "theta"))
 
 
@@ -321,7 +321,7 @@ p11.1.2
 
 ##Multilevel model
 
-The over-dispersion problem can also be solved by constructing a multilevel model. With that, we can assign our own *prior* distribution on the *prior*.
+The over-dispersion problem can also be solved by constructing a multilevel model. With that, we can assign our own *prior* distribution on the *prior*. The higher level prior is called **hyper priors**. By comparing the parameters of hyper priors of different genders, we will have similar result of beta-binomial/gamma-poisson model. We will learn about the detail in tutorial-ch13.
 
 #Zero-inflated
 Let's move on to the second part of this chapter, **mixture models**. In many ocassions, the things we observe are not emissions from any simple process. Instead, they are mixtures of multiple processes. A mixture model uses more than one probability distribution to model a mixture of process.

@@ -627,10 +627,11 @@ grid.arrange(p1, p2)
 ##Out Sample Prediction
 When we’d like to make prediction about the whole species, not just the seven chimpenzees we have, it's time for out of sample prediction. In this situation, the individual actor intercepts aren’t of interest, but the distribution of them is.
 
-The ideas of CI and PI can also be applied here. We can either predict for an "average" chimpanzee, whose intercept is exactly $\bar\alpha$, or an individual chimpanzee, whose intercept is drawn from $N(\bar\alpha, \sigma_{alpha})$. They will be denoted as **p_bar** and **p_sim** respectively.
+The ideas of CI and PI can also be applied here. We can either predict for an "average" chimpanzee, whose intercept is exactly $\bar\alpha$, or an "individual" chimpanzee, whose intercept is drawn from $N(\bar\alpha, \sigma_{alpha})$. They will be denoted as **p_bar** and **p_sim** respectively.
 
 The predictions for an average chimpanzee help us to understand the impact of different treatments. 
-The predictions for an individual one illustrate how variable different chimpanzees are.
+
+The predictions for an individual one illustrate how variable different chimpanzees react to the experiment conditions.
 
 ###Stan Method
 Using the Stan method, we need to add some lines at the generated quantities block. 
@@ -736,13 +737,14 @@ grid.arrange(p3,p4, nrow=1)
 
 ###Apply Method
 ```{r}
-#post = extract.samples(fit12.2.2c, pars=fit12.2.2c@model_pars[1:7])
+#recall: post = extract.samples(fit12.2.2c, pars=fit12.2.2c@model_pars[1:7])
 pbar_link = function( treatment ) {
-  logodds <- with( post , alpha_bar + beta[,treatment] ) 
+  logodds <- with( post , alpha_bar + beta[,treatment]*sigma_beta ) 
   return( inv_logit(logodds) )
 }
 
 apply_result2 <- sapply( 1:4 , function(i) pbar_link( i ) ) 
+
 p5 = 
   data.frame(
     mean = apply_result2 %>% apply(., 2,mean),
@@ -754,9 +756,10 @@ p5 =
   geom_ribbon(aes(x=1:4, ymin=CI_lower, ymax=CI_upper), alpha=.6) +
   ggtitle("p_bar: Apply Method")
 
+#p_sim
 a_sim <- with( post , rnorm( nrow(post$alpha) , alpha_bar , sigma_alpha ) )
 psim_link = function( treatment ) {
-  logodds <- with( post , a_sim + beta[,treatment] ) 
+  logodds <- with( post , a_sim + beta[,treatment]*sigma_beta ) 
   return( inv_logit(logodds) )
 }
 
