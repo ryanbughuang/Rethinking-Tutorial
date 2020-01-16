@@ -20,6 +20,7 @@ library(skimr) # for n_unique func
 library(DMwR) # for unscale func
 library(MASS)
 compare = rethinking::compare
+select = dplyr::select
 ```
 
 #Intro
@@ -124,18 +125,19 @@ sigma = 0.5 # std dev within cafes
 
 d_cafe = data.frame(
   cafe_id = rep( 1:N_cafes , each=N_visits ),
-  afternoon = rep(0:1,N_visits*N_cafes/2), # 0 = morning, 1 = afternoon
-  mu = vary_effects$a_cafe[cafe_id] + vary_effects$b_cafe[cafe_id]*afternoon
+  afternoon = rep(0:1,N_visits*N_cafes/2) # 0 = morning, 1 = afternoon
 ) %>% 
-  mutate( wait = rnorm( N_visits*N_cafes , mu , sigma ))
+  mutate( 
+    mu = vary_effects$a_cafe[cafe_id] + vary_effects$b_cafe[cafe_id]*afternoon,
+    wait = rnorm( N_visits*N_cafes , mu , sigma ))
 
-d_cafe %>% head()
+d_cafe = d_cafe %>% select(-mu)
 
 m13.1 <- map2stan( 
   alist(
     wait ~ dnorm( mu , sigma ),
-    mu <- a_cafe[cafe] + b_cafe[cafe]*afternoon, 
-    c(a_cafe,b_cafe)[cafe] ~ dmvnorm2(c(a,b),sigma_cafe,Rho), 
+    mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon, 
+    c(a_cafe,b_cafe)[cafe_id] ~ dmvnorm2(c(a,b),sigma_cafe,Rho), 
     a ~ dnorm(0,10),
     b ~ dnorm(0,10),
     sigma_cafe ~ dcauchy(0,2),
@@ -144,6 +146,7 @@ m13.1 <- map2stan(
 ),
 data=d_cafe,
 iter=5000 , warmup=2000 , chains=2 )
+stancode(m13.1)
 ```
 ##Model
 Before getting into the stan model, let's briefly review what we have done in a math form:
