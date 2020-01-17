@@ -307,7 +307,7 @@ For these interaction terms, we will need a different way to assign their priors
 We will use the **multivariate gaussian** distribution as our prior.
 ```{r}
 d_chimp = data("chimpanzees")
-d_chimpanzees
+d_chimp
 ```
 
 
@@ -337,14 +337,23 @@ m13.6 <- map2stan(
     Rho_block ~ dlkjcorr(4)
 ) , data=d , iter=5000 , warmup=1000 , chains=3 , cores=3 )
 ```
+```{r}
+stancode(m13.6)
+```
 
 #Case3: intercepts + slopes
 ```{r}
-?dlkjcorr
 data(KosterLeckie)
-kl_dyads
-kl_households
-m14.4 <- map2stan( 
+kl_data = list(
+  N = nrow(kl_dyads),
+  N_households = 25,
+  hidA = kl_dyads$hidA,
+  hidB = kl_dyads$hidB,
+  giftsAB = kl_dyads$giftsAB,
+  giftsBA = kl_dyads$giftsBA,
+  did = kl_dyads$did
+)
+m14.4 <- ulam( 
   alist(
     giftsAB ~ poisson( lambdaAB ),
     giftsBA ~ poisson( lambdaBA ),
@@ -352,17 +361,19 @@ m14.4 <- map2stan(
     log(lambdaBA) <- a + gr[hidB,1] + gr[hidA,2] + d[did,2] , 
     a ~ normal(0,1),
     ##gr matrix of varying effects
-    vector[2]:gr[N_households] ~ dmvnorm2(0,Rho_gr,sigma_gr), 
-    Rho_gr ~ dlkjcorr(4),
+    vector[2]:gr[N_households] ~ multi_normal(0,Rho_gr,sigma_gr), 
+    Rho_gr ~ lkj_corr(4),
     sigma_gr ~ exponential(1),
     ## dyad effects
     transpars> matrix[N,2]:d <- compose_noncentered( rep_vector(sigma_d,2) , L_Rho_d , z ), 
-    matrix[2,N]:z ~ dnorm( 0 , 1 ),
+    matrix[2,N]:z ~ normal( 0 , 1 ),
     cholesky_factor_corr[2]:L_Rho_d ~ lkj_corr_cholesky( 8 ), 
-    sigma_d ~ dexp(1)
+    sigma_d ~ exponential(1),
     ## compute correlation matrix for dyads
     gq> matrix[2,2]:Rho_d <<- multiply_lower_tri_self_transpose( L_Rho_d )
-), data=kl_dyads , chains=4 , cores=4 , iter=2000 )
+), data=kl_data , chains=1 , cores=1 , iter=2000 )
+
+stancode(m14.4)
 ```
 
 #Case4: gaussian process
@@ -370,9 +381,11 @@ m14.4 <- map2stan(
 data(islandsDistMatrix)
 # display short column names, so fits on screen
 Dmat <- islandsDistMatrix
-colnames(Dmat) <- c("Ml","Ti","SC","Ya","Fi","Tr","Ch","Mn","To","Ha") round(Dmat,1)
+colnames(Dmat) <- c("Ml","Ti","SC","Ya","Fi","Tr","Ch","Mn","To","Ha") 
+round(Dmat,1)
 
-data(Kline2) # load the ordinary data, now with coordinates d <- Kline2
+data(Kline2) # load the ordinary data, now with coordinates 
+d <- Kline2
 d$society <- 1:10 # index observations
 
 m13.7 <- map2stan( 
