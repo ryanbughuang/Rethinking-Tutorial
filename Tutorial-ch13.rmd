@@ -132,21 +132,6 @@ d_cafe = data.frame(
     wait = rnorm( N_visits*N_cafes , mu , sigma ))
 
 d_cafe = d_cafe %>% select(-mu)
-
-m13.1 <- map2stan( 
-  alist(
-    wait ~ dnorm( mu , sigma ),
-    mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon, 
-    c(a_cafe,b_cafe)[cafe_id] ~ dmvnorm2(c(a,b),sigma_cafe,Rho), 
-    a ~ dnorm(0,10),
-    b ~ dnorm(0,10),
-    sigma_cafe ~ dcauchy(0,2),
-    sigma ~ dcauchy(0,2),
-    Rho ~ dlkjcorr(2)
-),
-data=d_cafe,
-iter=5000 , warmup=2000 , chains=2 )
-stancode(m13.1)
 ```
 ##Model
 Before getting into the stan model, let's briefly review what we have done in a math form:
@@ -162,6 +147,8 @@ matrices means. But in this case, the correlation
 matrix is only 2-by-2 so there is only one parameter $\rho$. For more complicated cases, the same prior, **LKJ distribution** still works.
 
 Let's see how a LKJ distribution works.  LKJcorr(eta = 2) defines a weakly informative prior on ρ that is skeptical of extreme correlations near −1 or 1. LKJ distribution has a single parameter, eta. When we eta = 1, the prior is flat. When eta becomes larger, it will be more skeptical on the extreme values(-1 or 1).
+
+###lkj prior
 ```{r}
 ?rlkjcorr
 R = rlkjcorr(n = 1000, K = 3, eta = 2)  # K: dim, eta: shape
@@ -184,20 +171,124 @@ rho %>% ggplot()+
 
 ```
 
+###Stan
 We can start writing the Stan program now. We need some new coding techniques to deal with the matrixs and vectors in our model.
+
 ```{r}
-m13.1 = ""
+m13.1 <- map2stan( 
+  alist(
+    wait ~ dnorm( mu , sigma ),
+    mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon, 
+    c(a_cafe,b_cafe)[cafe_id] ~ dmvnorm2(c(a,b),sigma_cafe,Rho), 
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,10),
+    sigma_cafe ~ dcauchy(0,2),
+    sigma ~ dcauchy(0,2),
+    Rho ~ dlkjcorr(2)
+),
+data=d_cafe,
+iter=5000 , warmup=2000 , chains=2 )
+stancode(m13.1)
 ```
 
+```{r, results='hide'}
+m13.1 = "
+data{
+	int N;
+	int N_cafe;
+	int cafe_id[N];
+	int afternoon[N];
+	real wait[N];
+}
+parameters{
+	
+	//parameters
+	real alpha[N_cafe];
+	real beta[N_cafe];
+	real<lower=0> sigma_cafe;
 
-In tutorial ch11-1(m11.1.1), we learn about using beta-binomial model to estimate the average admit rates of male and female across all departments. 
-The result suggested that there was no difference overall. However, we also noticed that the admit rates of each department vary a lot. 
-To understand if there exist discrimination on the department level, we can estimate the parameters of all gender-department combinations.
+	//hyperparameters
+	vector<lower=0>[2] sigma_par; // [sigma_alpha, sigma_beta]
+	corr_matrix[2] R;
+	real hyper_alpha;
+	real hyper_beta;
+
+}
+transformed parameters{
+
+	//variable declarations
+	vector[2] Mu;					// Mu vector in MVN
+	matrix[2, 2] Sigma;				// Sigma matrix in MVN
+	vector[2] alpha_beta[N_cafe];	// y vector
+	vector[N] mu_cafe;				// mu_cafe
+
+
+	// Mu vector in MVN
+	Mu[1] = hyper_alpha;
+	Mu[2] = hyper_beta;
+	
+	// Sigma matrix in MVN
+	Sigma = quad_form_diag(R, sigma_par); 
+	// i.e. diag_matrix(sigma_par)  * R * diag_matrix(sigma_par)
+
+	// y vector
+	for (j in 1:N_cafe) {
+		alpha_beta[j, 1] = alpha[j];
+		alpha_beta[j, 2] = beta[j];
+	}
+
+	// mu_cafe
+	for (i in 1:N){
+		mu_cafe[i] = alpha[cafe_id[i]] + beta[cafe_id[i]] * afternoon[i];}
+
+}
+model{
+	
+	//model
+	wait ~ normal(mu_cafe, sigma_cafe);
+
+	//prior
+	alpha_beta ~ multi_normal(Mu, Sigma);
+	sigma_cafe ~ exponential(1);
+
+	//hyper prior
+	hyper_alpha ~ normal(5, 2);
+	hyper_beta ~ normal(-1, 0.5);
+	R ~ lkj_corr(2);
+	sigma_par ~ exponential(1);
+
+
+}
+generated quantities {
+	vector[N] log_lik;
+	for (i in 1:N){
+		log_lik[i] = normal_lpdf(wait[i] | mu_cafe[i], sigma_cafe);
+	}
+}
+"
+dat13.1 = list(
+  N = nrow(d_cafe),
+  N_cafe = d_cafe$cafe_id %>% n_unique(),
+  cafe_id = d_cafe$cafe_id,
+  afternoon = d_cafe$afternoon,
+  wait = d_cafe$wait
+)
+fit13.1 = stan(model_code = m13.1, data = dat13.1, cores = 2, chains = 2, iter = 5000)
+```
+##Posterior
+Let's check if our model is able to estimate the correct parameters we set.
+
+$\alpha = 3.5 \\ \beta=-1 \\ \sigma_{\alpha} = 1 \\ \sigma_{\beta} = 0.5 \\ \rho = -0.7$
+
 ```{r}
-
+print(fit13.1, 
+      pars = c("hyper_alpha", "hyper_beta", "sigma_par", "R"), 
+      probs = c())
 ```
 
+The results shows that the model learned the negative correlation on $\alpha$ and $\beta$ even though it had only observed wait times in morning and afternoon.
 
+We can also see the shrinkage effect of this adaptive regularization model. Let’s plot the unpooled estimates, posterior mean varying effects and the contours from the inferred prior.
 
 #Case2: more than one intercept in many clusters
 To see how to construct a model with more than two varying effects as well as with *more than one type of cluster*, we’ll return to the chimpanzee data again.
@@ -219,9 +310,86 @@ d_chimp = data("chimpanzees")
 d_chimpanzees
 ```
 
+
+```{r}
+library(rethinking) 
+data(chimpanzees)
+d <- chimpanzees 
+d$recipient <- NULL 
+d$block_id <- d$block
+m13.6 <- map2stan( 
+  alist(
+    # likeliood
+    pulled_left ~ dbinom(1,p),
+    # linear models
+    logit(p) <- A + (BP + BPC*condition)*prosoc_left,
+    A <- a + a_actor[actor] + a_block[block_id],
+    BP <- bp + bp_actor[actor] + bp_block[block_id], 
+    BPC <- bpc + bpc_actor[actor] + bpc_block[block_id],
+    # adaptive priors
+    c(a_actor,bp_actor,bpc_actor)[actor] ~ dmvnorm2(0,sigma_actor,Rho_actor),
+    c(a_block,bp_block,bpc_block)[block_id] ~ dmvnorm2(0,sigma_block,Rho_block),
+    # fixed priors
+    c(a,bp,bpc) ~ dnorm(0,1), 
+    sigma_actor ~ dcauchy(0,2), 
+    sigma_block ~ dcauchy(0,2), 
+    Rho_actor ~ dlkjcorr(4), 
+    Rho_block ~ dlkjcorr(4)
+) , data=d , iter=5000 , warmup=1000 , chains=3 , cores=3 )
+```
+
 #Case3: intercepts + slopes
 ```{r}
-
+?dlkjcorr
+data(KosterLeckie)
+kl_dyads
+kl_households
+m14.4 <- map2stan( 
+  alist(
+    giftsAB ~ poisson( lambdaAB ),
+    giftsBA ~ poisson( lambdaBA ),
+    log(lambdaAB) <- a + gr[hidA,1] + gr[hidB,2] + d[did,1] , 
+    log(lambdaBA) <- a + gr[hidB,1] + gr[hidA,2] + d[did,2] , 
+    a ~ normal(0,1),
+    ##gr matrix of varying effects
+    vector[2]:gr[N_households] ~ dmvnorm2(0,Rho_gr,sigma_gr), 
+    Rho_gr ~ dlkjcorr(4),
+    sigma_gr ~ exponential(1),
+    ## dyad effects
+    transpars> matrix[N,2]:d <- compose_noncentered( rep_vector(sigma_d,2) , L_Rho_d , z ), 
+    matrix[2,N]:z ~ dnorm( 0 , 1 ),
+    cholesky_factor_corr[2]:L_Rho_d ~ lkj_corr_cholesky( 8 ), 
+    sigma_d ~ dexp(1)
+    ## compute correlation matrix for dyads
+    gq> matrix[2,2]:Rho_d <<- multiply_lower_tri_self_transpose( L_Rho_d )
+), data=kl_dyads , chains=4 , cores=4 , iter=2000 )
 ```
 
 #Case4: gaussian process
+```{r}
+data(islandsDistMatrix)
+# display short column names, so fits on screen
+Dmat <- islandsDistMatrix
+colnames(Dmat) <- c("Ml","Ti","SC","Ya","Fi","Tr","Ch","Mn","To","Ha") round(Dmat,1)
+
+data(Kline2) # load the ordinary data, now with coordinates d <- Kline2
+d$society <- 1:10 # index observations
+
+m13.7 <- map2stan( 
+  alist(
+    total_tools ~ dpois(lambda),
+    log(lambda) <- a + g[society] + bp*logpop, 
+    g[society] ~ GPL2( Dmat , etasq , rhosq , 0.01 ), a ~ dnorm(0,10),
+    bp ~ dnorm(0,1),
+    etasq ~ dcauchy(0,1),
+    rhosq ~ dcauchy(0,1)),
+  data=
+    list(
+      total_tools=d$total_tools, 
+      logpop=d$logpop, 
+      society=d$society, 
+      Dmat=islandsDistMatrix),
+  warmup=2000 , iter=1e4 , chains=4 )
+```
+
+
