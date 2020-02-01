@@ -23,7 +23,8 @@ compare = rethinking::compare
 select = dplyr::select
 ```
 
-#Intro
+# Intro
+
 **Ch13 in ver.1, Ch14 in ver.2**
 This is the first chapter in the course about multivariate model, which means we will analyze more than one outcome variable at a time.
 
@@ -32,17 +33,15 @@ The concepts and codes are much more complicated than any other chapter in the t
 In previous chapter, we learn about the construction of **varying intercepts** model. In these models, there is only one parameters in each group. In this chapter, we will learn about the how to **pool information between parameters** when there are more than one parameters(ex: intercepts and slopes) in one group.
 
 We will talk about these cases in the tutorial:
-
-  1. more than one intercept(categorical variables, ver1-ch13.2)
   
-  2. more than one intercept in many clusters(categorical variables, ver2-ch14.2)
+  1. more than one intercept in many clusters(categorical variables, ver2-ch14.2)
   
-  3. social relations model(categorical variables(ch14.4))
+  2. social relations model(categorical variables, ver2-ch14.4)
   
-  4. gaussian process(continous categories, ver2-ch14.5)
+  3. gaussian process(continous categories, ver2-ch14.5)
 
 
-#Case1: more than one intercept
+# Case1: more than one intercept
 Suppose we have a record of the waiting time of two cafés. The cafés vary in their average wait times($\alpha_{cafe[i]}$), and in their differences between morning and afternoon($\beta_{cafe[i]}$). There are now 2 parameters we are interested in now.
 
 In tradictional approach, we will assign different prior for the two parameters, assuming they are indepent from others. But the fact is that they are probably related. At a popular café, wait times are on average long in the morning. But the same café will be much less busy in the afternoon since they have more staffs and fewer customers. But at a less popular café, the difference will be small. 
@@ -51,7 +50,7 @@ To pool the information from 2 parameters, we have to model their joint populati
 
 In the first example, we will generate the fake café data and do the retrodiction to understand how the model works.
 
-##Set hyper pars
+## Set hyper pars
 Firstly we have to set the parameters for all cafes. 
 ```{r}
 a = 3.5         #average morning wait time
@@ -87,7 +86,7 @@ Rho = matrix( c(1,rho,rho,1) , nrow=2 )
 Cov = diag(sigmas) %*% Rho %*% diag(sigmas)
 ```
 
-##cafe pars
+## cafe pars
 Now we’re ready to simulate some cafés from the hyper parameters we have set. The results are the **average wait time** and **average difference** of each cafe.
 ```{r}
 N_cafes = 20
@@ -117,7 +116,7 @@ p1.1
 ```
 We can use the `stat_ellipse` function to plot a 2-D gaussian distribution. By setting different `level`, the function will plot the ellipses with different confidence intervals.
 
-##Draw observation
+## Draw observation
 The last step is to draw observations from the **average wait time** and **average difference** of each cafe. We will *visit* each cafe by 10 times, 5 in the morning and 5 in the afternoon. The resulting d_cafe dataframe will have 200 rows with 100 rows in the morning.
 ```{r}
 N_visits = 10
@@ -133,7 +132,8 @@ d_cafe = data.frame(
 
 d_cafe = d_cafe %>% select(-mu)
 ```
-##Model
+
+## Model
 Before getting into the stan model, let's briefly review what we have done in a math form:
 
 $W_i \sim Normal(\mu_i, \sigma) \\ \mu_i = \alpha_{cafe[i]} + \beta_{cafe[i]}A_i \\ \begin{bmatrix}\alpha_{cafe} \\ \beta_{cafe} \end{bmatrix} \sim MVN(\begin{bmatrix}\alpha \\ \beta \end{bmatrix}, S) \\ S = \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\} \times \left\{\begin{matrix}1 & \rho \\  \rho & 1 \end{matrix} \right\} \times \left\{\begin{matrix}\sigma_{\alpha} & 0 \\  0 & \sigma_{\beta} \end{matrix} \right\}$
@@ -148,9 +148,8 @@ matrix is only 2-by-2 so there is only one parameter $\rho$. For more complicate
 
 Let's see how a LKJ distribution works.  LKJcorr(eta = 2) defines a weakly informative prior on ρ that is skeptical of extreme correlations near −1 or 1. LKJ distribution has a single parameter, eta. When we eta = 1, the prior is flat. When eta becomes larger, it will be more skeptical on the extreme values(-1 or 1).
 
-###lkj prior
+### lkj prior
 ```{r}
-?rlkjcorr
 R = rlkjcorr(n = 1000, K = 3, eta = 2)  # K: dim, eta: shape
 
 dim(R)
@@ -171,7 +170,7 @@ rho %>% ggplot()+
 
 ```
 
-###Stan
+### Stan
 We can start writing the Stan program now. We need some new coding techniques to deal with the matrixs and vectors in our model.
 
 There is a new data type `corr_matrix`. Though a correlation matrix is just a N x N matrix, values in `corr_matrix` are limited(-1 ~ 1), which improve the performance, by using the corr_matrix instead.
@@ -266,7 +265,8 @@ dat13.1 = list(
 )
 fit13.1 = stan(model_code = m13.1, data = dat13.1, cores = 2, chains = 2, iter = 5000)
 ```
-##Posterior
+
+## Posterior
 Let's check if our model is able to estimate the correct parameters we set.
 
 $\alpha = 3.5 \\ \beta=-1 \\ \sigma_{\alpha} = 1 \\ \sigma_{\beta} = 0.5 \\ \rho = -0.7$
@@ -281,7 +281,7 @@ The results shows that the model learned the negative correlation on $\alpha$ an
 
 We can also see the shrinkage effect of this adaptive regularization model. Let’s plot the unpooled estimates, posterior mean varying effects(partially pooled) and the contours from the inferred prior.
 
-###Unpooled result
+### Unpooled result
 The unpooled result are directly from the data we generated. We just compute the mean of the wait time for each cafe in the morning($\alpha$) and the afternoon respectively and substract morning wait from afternoon wait to get the difference($\beta$).
 ```{r}
 unpooled = d_cafe %>% 
@@ -297,12 +297,9 @@ p1.2.1 = ggplot()+
   geom_point(data = unpooled, aes(x = morning, y = difference))
 p1.2.2 = ggplot()+
   geom_point(data = unpooled, aes(x = morning, y = afternoon))
-
-p1.2.1
-p1.2.2
 ```
 
-###Partially pooled
+### Partially pooled
 For partially pooled data, we extract samples from the stan model then filtered out the alpha and beta column.
 
 Plotting the scatter plot is the same as the unpooled part.
@@ -347,7 +344,7 @@ p1.2.2 = p1.2.2 +
  
 ```
 
-###Contour
+### Contour
 ```{r}
 for (i in c(c(0.1,0.3,0.5,0.8,0.99))) {
   p1.2.1 = p1.2.1 + 
@@ -369,7 +366,7 @@ grid.arrange(p1.2.1, p1.2.2, nrow = 1)
 Each blue point(partially pooled result) is pulled from the black(unpooled result) towards the center of the contours, as a result of shrinkage in both dimensions. 
 Black points farther from the center experience more shrinkage, because they are less plausible.
 
-#Case2: more than one intercept in many clusters
+# Case2: more than one intercept in many clusters
 To see how to construct a model with more than *two varying effects* as well as with *more than one type of cluster*, we’ll return to the chimpanzee data again.
 
 In tutorial ch12, we have hyper priors for actors, treatments and blocks respectively. The math model is:
@@ -388,8 +385,9 @@ Again, **multivariate gaussian** distribution is used.
 
 You may notice that in the model of case 1, we have some divergent transitions.
 Non-centered parameterization is even more important in the advanced model of this chapter. I will present different versions of parameterizations for case 2 and case 3.
-##standard parameterization
-###Math Model
+
+## standard parameterization
+### Math Model
 Let's begin by comparing the math model in ch12 and in ch13.
 In ch12, we have independent varying effects for actor, treat and block.
 The math model is:
@@ -409,7 +407,6 @@ logit(p_i) = \alpha_{actor[i], TID[i]} + \gamma_{TID[i]} + \beta_{block[i], TID[
   \alpha_{actor_j, treat_4} 
 \end{bmatrix} 
 \sim MVN(\begin{bmatrix} 0 \\ 0 \\ 0 \\ 0 \end{bmatrix}, S_{actor}) \\ 
-
 \begin{bmatrix} 
   \beta_{block_j, treat_1} \\ 
   \beta_{block_j, treat_2} \\ 
@@ -417,7 +414,6 @@ logit(p_i) = \alpha_{actor[i], TID[i]} + \gamma_{TID[i]} + \beta_{block[i], TID[
   \beta_{block_j, treat_4} 
 \end{bmatrix} 
 \sim MVN(\begin{bmatrix} 0 \\ 0 \\ 0 \\ 0 \end{bmatrix}, S_{block}) \\ 
-
 S_{actor} = 
 \begin{bmatrix} 
   \sigma_{\alpha_1} & 0 & 0 & 0 \\ 
@@ -431,7 +427,6 @@ S_{actor} =
   0 & \sigma_{\alpha_2} & 0 & 0  \\ 
   0 & 0 & \sigma_{\alpha_3} & 0 \\ 
   0 & 0 & 0 & \sigma_{\alpha_4} \end{bmatrix} \\ 
-  
 S_{block} = 
   \begin{bmatrix} 
     \sigma_{\beta_1} & 0 & 0 & 0 \\ 
@@ -445,11 +440,11 @@ S_{block} =
     0 & \sigma_{\beta_2} & 0 & 0  \\ 
     0 & 0 & \sigma_{\beta_3} & 0 \\ 
     0 & 0 & 0 & \sigma_{\beta_4} 
-  \end{bmatrix}$$
+  \end{bmatrix} $$
 
 
 
-###Stan Model
+### Stan Model
 The data we use in the chimpanzee example are exactly the same as the one we used in ch12.
 ```{r}
 data("chimpanzees")
@@ -464,7 +459,7 @@ But recall that although the coefficients are matrix, we **SHOULD NOT** assign t
 
 ![](tutorialch13.2.1.png)
 
-In the transformed parameters part, we calculate p for each row of data and construct the sigma matrices $S_{actor} & S_{block}$.
+In the transformed parameters part, we calculate p for each row of data and construct the sigma matrices $S_{actor}$ & $S_{block}$.
 The calculation of p is pretty much the same as what we did in m12.2.2. The only difference is that we need two indexes here.
 For constructing the sigma matrices, it's the same as case1. The key point is to use `quad_form_diag`.
 
@@ -549,8 +544,8 @@ dat13.2.1 = list(
 fit13.2.1 = stan(model_code = m13.2.1, data = dat13.2.1, chains = 2, cores = 2, iter = 4000)
 ```
 
-##non-centered
-###MVN decomposition
+## non-centered
+### MVN decomposition
 *There isn't much explaination in the rethinking textbook, so the following are my personal understand. I can't guarantee the correctness of the math detail.*
 When fitting the model, rstan warns us that there are some divergent transitions in it.
 
@@ -607,10 +602,11 @@ $$R =
   \sigma_1\sigma_2\rho & \sigma_2^2
   \end{bmatrix} = Cov
   $$ 
-So $\begin{bmatrix} \sigma_1 & 0 \\ 0 & \sigma_2\end{bmatrix}\begin{bmatrix} 1 & 0 \\ \rho & \sqrt{1-\rho^2 \end{bmatrix}$ is our $A$ in $X = \mu + ZA$.
+So $\begin{bmatrix} \sigma_1 & 0 \\ 0 & \sigma_2\end{bmatrix}\begin{bmatrix} 1 & 0 \\ \rho & \sqrt{1-\rho^2} \end{bmatrix}$ is our $A$ in $X = \mu + ZA$.
 
-###Math Model
+### Math Model
 Finally, we get our non-centered version math model. Notice that with the non-centered parameterization we can generate MVNormal output from standard normal distribution.
+
 $$
 L_i \sim Binomial(1, p_i) \\
 logit(p_i) = \alpha_{actor[i], TID[i]} + \gamma_{TID[i]} + \beta_{block[i], TID[i]}\\ 
@@ -633,9 +629,7 @@ LRho_{\alpha}
   \vdots & \ddots & \vdots  \\ 
   z_{[actor_1, treat_4]} & \cdots & z_{[actor_7, treat_1]} 
 \end{bmatrix}
-
 \\ 
-
 \begin{bmatrix} 
   \beta_{block_j, treat_1} \\ 
   \beta_{block_j, treat_2} \\ 
@@ -655,9 +649,7 @@ LRho_{\beta}
   \vdots & \ddots & \vdots  \\ 
   z_{[block_1, treat_4]} & \cdots & z_{[block_6, treat_1]} 
 \end{bmatrix}
-
 \\ 
-
 [z_{[actor_j, treat_i]}] \sim normal(0, 1)
 \\
 [z_{[block_j, treat_i]}] \sim normal(0, 1)
@@ -671,7 +663,7 @@ $$
 
 
 
-###Stan Model
+### Stan Model
 Now we can code our model in Stan. There are again some new stan functions in the model.
 ```{r, results='hide'}
 m13.2.2 = "
@@ -748,7 +740,7 @@ fit13.2.2 = stan(model_code = m13.2.2, data = dat13.2.2, chains = 4, cores = 4, 
 ```
 With the non-centered parameterization, the divergent transition is `r divergent(fit13.2.2)`!
 
-##Summary
+## Summary
 After solving the divergent transition problem, we can start our analysis in the model. 
 First we would like to investigate sigma_actor and sigma_block. We can tell that the block effect is much smaller than the actor effect and the *shrinkage* effect is different in different (actor, treatment) combination.
 ```{r}
@@ -907,13 +899,14 @@ p2.2 = ggplot() +
         axis.ticks.x=element_blank())
 p2.2
 ```
+
 In the above plot, the block dots are the training data, the red dots/lines are from m10.1.3(fixed effect) and the blue dots/lines are from m13.2.2(varying effect w/ interaction). 
 Notice that the posterior does not just repeat the data—there is shrinkage(closer to p=0.5 compared with training data) in several places. 
 Actor 2 is the most obvious. In every treatment and block, it pulled left. The blue points cling to the top. But the posterior predictions shrink inward.
 
 Although our conclusion about this data is the same: no general treatment effect. However, this complex model will reveal the situation when a few individuals reacts to certain treatment, which is expecially useful in medical experiments.
 
-#Case3: social relations model
+# Case3: social relations model
 ## Intro
 The modeling techniques are similar to Case2, I won't talk about the detail in the video but I will still provide the code and explainations here.
 
@@ -930,7 +923,7 @@ The raw correlation of `giftsAB` and `giftsBA` is small at only `r cor(d_dyads$g
 However these exanchges are also affected by other factors such as living conditions of each household.
 We would like to construct a model that can seperate these effects.
 
-##Math model
+## Math model
 The mathmetical of this model is very interesting. We will model gifts from A to B and B to A at the same time. Besides we will make the coefficients in the 2 likelihood functions correlated.
 
 Here is our likelihood functions for $gift_{AB}$ and $gift_{BA}$:
@@ -972,7 +965,7 @@ MVN(\begin{bmatrix}
 $$
 $\rho_d$ will answer the question: whether a household gives more will receives more in a dyad. If $\rho_d$ is large, then when one household gives more within a dyad, so too does the other. If $\rho_d$ is instead near zero, then there is no pattern within dyads.
 
-##Stan Model
+## Stan Model
 We will directly code the non-centered version stan model in this case. It's the same as case 2. In the `generated quantities` block, we add some lines to calculate the correlation matrices of $\rho_d$ and $\rho_{gr}$.
 
 ```{r, results='hide'}
@@ -1057,7 +1050,7 @@ dat13.3.1 = list(
 )
 fit13.3.1 = stan(model_code = m13.3.1, data = dat13.3.1, cores = 2, chains = 2, iter = 4000)
 ```
-##Summary
+## Summary
 ### generalized giving
 Let's first look at general giving and receiving effect for each household. 
 The result of $\rho_{gr}$ is a negative correlation, which means for a certanin household the more(less) they give the less(more) they receive. This makes sense because rich households give more and receive less while poor ones give less and receive more.
@@ -1098,11 +1091,11 @@ p3.1 = p3.1 + ggtitle("Generalized Giving")
 ```
 
 Secondly we can look at the dyad effect of each dyad(pairs).
-The correlation here is positive and strong. This implies that pairs of households are balanced— if one household gives less than average (after accounting for generalized giving and receiv- ing), then the other probably gives less back as well.
+The correlation here is positive and strong. This implies that pairs of households are balanced— if one household gives less than average (after accounting for generalized giving and receiving), then the other probably gives less back as well.
 ```{r}
 print(fit13.3.1, pars = c("Rho_dyad", "sigma_dyad"), probs = c())
 ```
-###dyad effect
+### dyad effect
 We can plot the average dyad effect of each pair as well.
 ```{r}
 post_dyad = as.data.frame(fit13.3.1, pars = "dyad")
@@ -1125,15 +1118,15 @@ p3.2 = dyad_table %>%
 grid.arrange(p3.1, p3.2, nrow=1)
 ```
 
-#Case4: gaussian process
-##Intro
+# Case4: gaussian process
+## Intro
 The varying effects model we have learn so far have been defined over discrete, unordered categories.
 In the last part of this chapter we will learn about modeling continuous variable such as income, age or distance.
 The covariation decreases as any two observations become dissimilar in income or income or age or any other dimension. The general approach to solve this problem is known as **Gaussian process regression**.
 
 The data we use is the ocean tool data again(recall: tutorial ch10-2). In this model we will take the distances between the islands into consideration. We’ll define a distance matrix among the islands. Then we want to estimate how similarity in tool counts depends upon geographic distance.
 
-##Math Model
+## Math Model
 We just modify the scientific model in tutorial ch10-2 by multiplying the distance effect.
 $$T \sim Poisson(\lambda)\\
 \lambda_i = exp(k_{society[i]})\alpha P_i^{\beta} / \gamma
@@ -1167,7 +1160,8 @@ data.frame(
   xlab("Distance")+
   ggtitle("Kernel function")
 ```
-##Stan Model
+
+## Stan Model
 Let's start by preparing our data.
 In addition to what we already have in `Kline2`, we need to load `islandDistMatrix` for the distance matrix. 
 ```{r}
@@ -1194,7 +1188,10 @@ dat13.4.1 = list(
   predict_x = seq(6, 14, length.out = 30) %>% exp()
 )
 ```
+
 The only difference in this model is to use for loops to calculate the values in the covariance matrix.
+
+### Centered
 The rest of the model is the same as the previous MVN models.
 ```{r, results='hide'}
 m13.4.1 = "
@@ -1267,7 +1264,7 @@ fit13.4.1 = stan(model_code = m13.4.1, data = dat13.4.1, cores = 2, chains = 2, 
 ```{r}
 print(fit13.4.1, pars = c("alpha","beta", "gamma", "etasq", "rhosq"))
 ```
-###Non-centered
+### Non-centered
 There are `r divergent(fit13.4.1)` transitions in the model, again we can solve the problem by reparameterization. In fact, it's usually necessary to reparameterize for GP model.
 It's much easier here in the GP model to reparameterize.
 The key difference in non-centered version is to convert $k \sim MVN(0, cov)$ to $k = L_{cov} * z, z\sim N(0, 1)$.
@@ -1357,10 +1354,10 @@ print(fit13.4.1, pars = c("alpha","beta", "gamma", "etasq", "rhosq"))
 print(fit13.4.2, pars = c("alpha","beta", "gamma", "etasq", "rhosq"))
 ```
 
-##Summary
+## Summary
 In the last part, we will learn how to visualize the posterior when we have gaussian process variables.
 
-###Kernel
+### Kernel
 Firstly we can plot the prior and posterior kernel function of GP to understand the effect of distance. We have 5000 pairs of (etasq, rhosq) but we can just plot 50 of them for convenience.
 ```{r}
 prior_kernel = data.frame(
@@ -1426,7 +1423,7 @@ grid.arrange(p_prior_kernel, p_post_kernel, nrow=1)
 ```
 From the above plots, we can see that there are lots of variance in the GP effect, but the majority of posterior curves decline to zero covariance before 4000 kilometers and most the kernels have etasq < 0.5
 
-###Correlation
+### Correlation
 Knowing the kernel function is not enough for us to understand how distance and other variables affect the correlation of each island.
 Let's calculate the correlation of each island using mode etasq and rhosq. We can't get the **correlation** matrix directly. We have to calculate the **covariance** matrix the use the `cov2cor` function to convert it to a **correlation** matrix.
 ```{r}
@@ -1447,7 +1444,7 @@ for(i in 1:10){
 COR_mat = COV_mat %>% cov2cor() %>% round(., digits = 2) %>% as.data.frame()
 ```
 
-###Island Map and Correlation
+### Island Map and Correlation
 We can map the the correlation matrix with the actual position of each island.
 The lines connecting each island shows the strength of correlation, the darker the stronger.
 The size of each island shows the population of each island.
@@ -1475,7 +1472,7 @@ p_island_cor =
 p_island_cor
 ```
 
-###Tool prediction
+### Tool prediction
 In the last plot, we take population into consideration. We can plot `logpop` on the x axis, `tools` on the y axis and connect each island by their strength of correlation.
 The dashed lines are the median and 89% HPDI predictions of tools based on our model(ignoring GP effect).
 ```{r, warning=FALSE}
